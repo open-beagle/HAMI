@@ -1,0 +1,118 @@
+From 33998613e36b60ee99c6fcb7a9315cbd0a258647 Mon Sep 17 00:00:00 2001
+From: gaoshiyao <gaoshiyao@bd-apaas.com>
+Date: Wed, 3 Sep 2025 14:52:10 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=A0=B9=E6=8D=AE=E6=B3=A8=E8=A7=A3=E5=80=BC?=
+ =?UTF-8?q?=E7=A1=AE=E5=AE=9Avgpu=E5=88=86=E7=89=87=E6=95=B0=E9=87=8F?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../nvinternal/plugin/register.go             | 27 +++++++++++++++++++
+ .../nvidiadevice/nvinternal/plugin/server.go  | 10 +++++++
+ 2 files changed, 37 insertions(+)
+
+diff --git a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/register.go b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/register.go
+index 7e2edba..7e85f7a 100644
+--- a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/register.go
++++ b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/register.go
+@@ -229,6 +229,33 @@ func (plugin *NvidiaDevicePlugin) WatchAndRegister() {
+ 			klog.Infof("Retrying in %v seconds...", errorSleepInterval)
+ 			time.Sleep(errorSleepInterval)
+ 		} else {
++			// read node annotation override for split count
++			node, nerr := util.GetNode(util.NodeName)
++			if nerr == nil && node.Annotations != nil {
++				if v, ok := node.Annotations[deviceSplitCountAnnotationKey]; ok && len(strings.TrimSpace(v)) > 0 {
++					if n, perr := strconv.ParseUint(strings.TrimSpace(v), 10, 32); perr == nil {
++						newSplit := uint(n)
++						if newSplit > 0 && newSplit != plugin.schedulerConfig.DeviceSplitCount {
++							plugin.schedulerConfig.DeviceSplitCount = newSplit
++							select {
++							case plugin.deviceSplitCountChange <- true:
++							default:
++							}
++							klog.Infof("Updated DeviceSplitCount to %d from annotation", newSplit)
++						}
++					}
++				} else {
++					// annotation removed: restore default from config
++					if plugin.schedulerConfig.DeviceSplitCount != plugin.defaultSplitCount {
++						plugin.schedulerConfig.DeviceSplitCount = plugin.defaultSplitCount
++						select {
++						case plugin.deviceSplitCountChange <- true:
++						default:
++						}
++						klog.Infof("Annotation removed, restored DeviceSplitCount to default %d", plugin.defaultSplitCount)
++					}
++				}
++			}
+ 			klog.Infof("Successfully registered annotation. Next check in %v seconds...", successSleepInterval)
+ 			time.Sleep(successSleepInterval)
+ 		}
+diff --git a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
+index 27aa750..5c3817c 100644
+--- a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
++++ b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
+@@ -67,6 +67,7 @@ const (
+ 	deviceListAsVolumeMountsHostPath          = "/dev/null"
+ 	deviceListAsVolumeMountsContainerPathRoot = "/var/run/nvidia-container-devices"
+ 	NodeLockNvidia                            = "hami.io/mutex.lock"
++	deviceSplitCountAnnotationKey             = "hami.io/device-split-count" // 注解设置分片数量
+ )
+ 
+ var (
+@@ -86,6 +87,7 @@ type NvidiaDevicePlugin struct {
+ 	deviceListStrategies spec.DeviceListStrategies
+ 	socket               string
+ 	schedulerConfig      nvidia.NvidiaConfig
++	defaultSplitCount    uint // 保存从config中读取的分片数量
+ 
+ 	cdiHandler          cdi.Interface
+ 	cdiEnabled          bool
+@@ -97,6 +99,8 @@ type NvidiaDevicePlugin struct {
+ 	server *grpc.Server
+ 	health chan *rm.Device
+ 	stop   chan any
++
++	deviceSplitCountChange chan bool // 判定是否变更
+ }
+ 
+ func readFromConfigFile(sConfig *nvidia.NvidiaConfig) (string, error) {
+@@ -169,6 +173,7 @@ func NewNvidiaDevicePlugin(config *nvidia.DeviceConfig, resourceManager rm.Resou
+ 		cdiEnabled:           cdiEnabled,
+ 		cdiAnnotationPrefix:  *config.Flags.Plugin.CDIAnnotationPrefix,
+ 		schedulerConfig:      sConfig.NvidiaConfig,
++		defaultSplitCount:    sConfig.NvidiaConfig.DeviceSplitCount,
+ 		operatingMode:        mode,
+ 		migCurrent:           nvidia.MigPartedSpec{},
+ 
+@@ -184,6 +189,7 @@ func (plugin *NvidiaDevicePlugin) initialize() {
+ 	plugin.server = grpc.NewServer([]grpc.ServerOption{}...)
+ 	plugin.health = make(chan *rm.Device)
+ 	plugin.stop = make(chan any)
++	plugin.deviceSplitCountChange = make(chan bool, 1)
+ }
+ 
+ func (plugin *NvidiaDevicePlugin) cleanup() {
+@@ -191,6 +197,7 @@ func (plugin *NvidiaDevicePlugin) cleanup() {
+ 	plugin.server = nil
+ 	plugin.health = nil
+ 	plugin.stop = nil
++	plugin.deviceSplitCountChange = nil
+ }
+ 
+ // Devices returns the full set of devices associated with the plugin.
+@@ -368,6 +375,9 @@ func (plugin *NvidiaDevicePlugin) ListAndWatch(e *kubeletdevicepluginv1beta1.Emp
+ 			d.Health = kubeletdevicepluginv1beta1.Unhealthy
+ 			klog.Infof("'%s' device marked unhealthy: %s", plugin.rm.Resource(), d.ID)
+ 			s.Send(&kubeletdevicepluginv1beta1.ListAndWatchResponse{Devices: plugin.apiDevices()})
++		case <-plugin.deviceSplitCountChange:
++			klog.Infof("Runtime configuration changed, updating device list for '%s'", plugin.rm.Resource())
++			s.Send(&kubeletdevicepluginv1beta1.ListAndWatchResponse{Devices: plugin.apiDevices()})
+ 		}
+ 	}
+ }
+-- 
+2.34.1
+
