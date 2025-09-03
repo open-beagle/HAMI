@@ -16,6 +16,9 @@ clone:
 steps:
   - name: fetch
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-git:1.0
+    settings:
+      proxy:
+        from_secret: SOCKS5_PROXY
   
   - name: s3-cache
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-s3-cache:1.0
