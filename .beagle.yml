@@ -39,7 +39,7 @@ steps:
       GOPROXY: https://goproxy.cn
       GOARCHS: amd64,arm64
     commands:
-      - bash .beagle/build.sh
+      - sh .beagle/build.sh
 
   - name: docker-amd64
     image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
