@@ -33,7 +33,7 @@ steps:
         from_secret: S3_SECRET_KEY_ALIYUN
   
   - name: build
-    image: registry.cn-qingdao.aliyuncs.com/wod/golang:v1.24.1-alpine3.21-amd64
+    image: registry.cn-qingdao.aliyuncs.com/wod/golang:v1.24.1-bullseye-amd64
     pull: true
     environment:
       GOPROXY: https://goproxy.cn
