@@ -6,7 +6,7 @@ trigger:
     - dev
 
 volumes:
-  - name: docker
+  - name: docker-sock
     host:
       path: /var/run/docker.sock
 
