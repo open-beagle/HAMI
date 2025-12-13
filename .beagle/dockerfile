@@ -1,4 +1,4 @@
-ARG BASE
+ARG BASE=projecthami/hami:v2.6.1
 
 FROM ${BASE}
 
