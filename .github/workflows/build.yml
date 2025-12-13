@@ -45,6 +45,7 @@ jobs:
       - name: Build and push images for amd64 - hami
         uses: docker/build-push-action@v5
         with:
+          context: .
           file: .beagle/dockerfile
           push: true
           platforms: linux/amd64
@@ -60,6 +61,7 @@ jobs:
       - name: Build and push images for arm64 - hami
         uses: docker/build-push-action@v5
         with:
+          context: .
           file: .beagle/dockerfile
           push: true
           platforms: linux/arm64
