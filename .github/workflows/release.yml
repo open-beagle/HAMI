@@ -1,0 +1,62 @@
+name: Build Release Images
+
+on:
+  push:
+    branches:
+      - release-v2.6
+
+env:
+  BUILD_VERSION: v2.6.1
+
+jobs:
+  sync-upstream:
+    name: Sync Upstream Images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: registry.cn-qingdao.aliyuncs.com
+          username: ${{ secrets.REGISTRY_USER_ALIYUN }}
+          password: ${{ secrets.REGISTRY_PASSWORD_ALIYUN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Pull and push upstream images - amd64
+        run: |
+          docker pull --platform linux/amd64 projecthami/hami:${{ env.BUILD_VERSION }}
+          docker tag projecthami/hami:${{ env.BUILD_VERSION }} ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
+          docker tag projecthami/hami:${{ env.BUILD_VERSION }} registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64
+          docker push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
+          docker push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64
+
+      - name: Pull and push upstream images - arm64
+        run: |
+          docker pull --platform linux/arm64 projecthami/hami:${{ env.BUILD_VERSION }}
+          docker tag projecthami/hami:${{ env.BUILD_VERSION }} ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
+          docker tag projecthami/hami:${{ env.BUILD_VERSION }} registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
+          docker push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
+          docker push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
+
+      - name: Create and push multi-arch manifest
+        run: |
+          docker manifest create ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }} \
+            ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64 \
+            ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
+          docker manifest push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}
+
+          docker manifest create registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }} \
+            registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64 \
+            registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
+          docker manifest push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}

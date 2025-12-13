@@ -2,11 +2,11 @@ ARG BASE
 
 FROM ${BASE}
 
-ARG AUTHOR
-ARG VERSION
+ARG AUTHOR=mengkzhaoyun@gmail.com
+ARG VERSION=v2.6.1
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
 LABEL maintainer=${AUTHOR} version=${VERSION}
 
-ARG TARGETOS
-ARG TARGETARCH
-
-ADD ./bin/nvidia-device-plugin /k8s-vgpu/bin/nvidia-device-plugin
+ADD ./bin/nvidia-device-plugin-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/nvidia-device-plugin
