@@ -96,7 +96,44 @@ HAMi Scheduler 会定期将 GPU 使用情况同步到节点注解中，包含两
 - 每次调度过滤时触发计算
 - **仅当注解值发生变化时才更新节点注解**，避免频繁写入 API Server
 
-## 3. 查看使用情况
+## 3. 显存申请与实际分配
+
+HAMi 支持多种 GPU/NPU 设备，不同厂商的设备有不同的显存分配粒度：
+
+| 设备类型 | 厂商     | HAMi 设备名 | 分配粒度                       | 说明                                      |
+| -------- | -------- | ----------- | ------------------------------ | ----------------------------------------- |
+| NVIDIA   | 英伟达   | NVIDIA      | **无固定粒度，按字节精确分配** | HAMi-core 直接调用 CUDA API，按请求值分配 |
+| Ascend   | 华为昇腾 | Ascend910x  | 按比例分配 (1/8, 1/4, 1/2 等)  | 按设备总显存的比例分配                    |
+| DCU      | 海光     | DCU         | 256 MB                         | 最小分配单元 256MB                        |
+| MTT      | 摩尔线程 | Mthreads    | 待确认                         | 摩尔线程 GPU                              |
+| Iluvatar | 天数智芯 | Iluvatar    | 256 MB                         | 每单位 256MB                              |
+| MLU      | 寒武纪   | MLU         | 256 MB                         | 最小分配单元 256MB                        |
+| Metax    | 沐曦     | Metax-GPU   | 待确认                         | 沐曦 GPU                                  |
+| Enflame  | 燧原     | Enflame     | 待确认                         | 燧原 GCU                                  |
+
+### NVIDIA GPU 显存分配详解
+
+HAMi-core 通过 Hook CUDA Driver API 实现显存限制，关键实现：
+
+```c
+// libvgpu/src/cuda/memory.c
+CUresult cuMemoryAllocate(CUdeviceptr* dptr, size_t bytesize, size_t* bytesallocated, void* data) {
+    if (bytesallocated != NULL)
+        *bytesallocated = bytesize;  // 实际分配 = 请求值
+    return cuMemAlloc_v2(dptr, bytesize);
+}
+```
+
+**结论：NVIDIA GPU 用户申请多少显存，HAMi 就分配多少显存，没有额外的对齐开销。**
+
+示例：
+
+- 用户申请 6001 MB → 实际分配 6001 MB
+- 用户申请 1234 MB → 实际分配 1234 MB
+
+显存限制通过环境变量 `CUDA_DEVICE_MEMORY_LIMIT` 传递给容器，HAMi-core 在每次 CUDA 内存分配时检查是否超限。
+
+## 4. 查看使用情况
 
 ```bash
 # 查看 GPU 使用汇总
