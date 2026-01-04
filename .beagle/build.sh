@@ -11,6 +11,7 @@ mkdir -p ${OUTPUT_DIR}
 # Apply split-count patch
 if $(git diff --quiet pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go); then
   git apply .beagle/split-count.patch
+  git apply .beagle/hami-3d-acceleration-fix.patch
 fi
 
 # Apply node-gpu-usage patch
