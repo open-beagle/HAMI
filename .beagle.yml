@@ -37,7 +37,7 @@ steps:
     pull: true
     environment:
       GOPROXY: https://goproxy.cn
-      GOARCHS: amd64,arm64
+      GOARCHS: amd64
     commands:
       - sh .beagle/build.sh
 
