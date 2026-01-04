@@ -3,7 +3,7 @@ name: dev
 
 trigger:
   branch:
-    - dev-xxx
+    - dev
 
 volumes:
   - name: docker-sock
