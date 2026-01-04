@@ -1,9 +1,9 @@
 kind: pipeline
-name: dev
+name: dev-3daccel
 
 trigger:
   branch:
-    - dev
+    - dev-3daccel
 
 volumes:
   - name: docker-sock
