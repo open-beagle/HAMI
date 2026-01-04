@@ -50,7 +50,7 @@ steps:
       base: registry.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1
       dockerfile: .beagle/dockerfile
       repo: wod/beagle-hami
-      Version: "v2.6.1"
+      Version: "v2.6.2"
       channel: amd64
       args: "TARGETOS=linux,TARGETARCH=amd64"
       registry: registry.cn-qingdao.aliyuncs.com
