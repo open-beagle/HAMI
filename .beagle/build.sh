@@ -27,10 +27,10 @@ CC=gcc CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X github.
 CC=gcc CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/device-plugin/nvidiadevice/nvinternal/info.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/nvidia-device-plugin-${BUILD_VERSION}-linux-amd64 ./cmd/device-plugin/nvidia
 
 # Build for arm64 (requires: apt-get install gcc-aarch64-linux-gnu)
-echo "Building for linux/arm64..."
-CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/version.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/scheduler-${BUILD_VERSION}-linux-arm64 ./cmd/scheduler
-CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/version.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/vGPUmonitor-${BUILD_VERSION}-linux-arm64 ./cmd/vGPUmonitor
-CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/device-plugin/nvidiadevice/nvinternal/info.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/nvidia-device-plugin-${BUILD_VERSION}-linux-arm64 ./cmd/device-plugin/nvidia
+# echo "Building for linux/arm64..."
+# CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/version.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/scheduler-${BUILD_VERSION}-linux-arm64 ./cmd/scheduler
+# CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/version.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/vGPUmonitor-${BUILD_VERSION}-linux-arm64 ./cmd/vGPUmonitor
+# CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build -ldflags "-s -w -X github.com/Project-HAMi/HAMi/pkg/device-plugin/nvidiadevice/nvinternal/info.version=${BUILD_VERSION}" -o ${OUTPUT_DIR}/nvidia-device-plugin-${BUILD_VERSION}-linux-arm64 ./cmd/device-plugin/nvidia
 
 echo "Build complete. Binaries in ${OUTPUT_DIR}/"
 ls -la ${OUTPUT_DIR}/
@@ -38,3 +38,4 @@ ls -la ${OUTPUT_DIR}/
 # Revert patches
 git apply -R .beagle/split-count.patch
 git apply -R .beagle/node-gpu-usage.patch
+git apply -R .beagle/hami-3d-acceleration-fix.patch
