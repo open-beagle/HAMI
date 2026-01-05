@@ -11,7 +11,7 @@ index 27aa750..b6ee833 100644
 -					response.Envs[limitKey] = fmt.Sprintf("%vm", dev.Usedmem)
 +				// Detect if this is a whole card allocation
 +				// Whole card mode: Usedcores == 100 (100% of compute resources)
-+				isWholeCard := isWholeCardAllocation(devreq)
++				isWholeCard := plugin.isWholeCardAllocation(devreq)
 +				klog.Infof("Allocation mode detected - isWholeCard: %v, devreq: %+v", isWholeCard, devreq)
 +
 +				// Only set memory and core limit variables in shared mode
