@@ -3,7 +3,7 @@ ARG BASE=projecthami/hami:v2.6.1
 FROM ${BASE}
 
 ARG AUTHOR=mengkzhaoyun@gmail.com
-ARG VERSION=v2.6.1
+ARG VERSION=v2.6.2
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
