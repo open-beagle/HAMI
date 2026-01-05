@@ -28,12 +28,9 @@ HAMI (Heterogeneous AI Computing Virtualization Middleware) 主要用于共享 G
 
 ### 4.2 判断“整卡”逻辑
 
-在 HAMI 中，`ContainerDevice` 结构体包含 `Usedcores` 字段。
+在 HAMI 中，`ContainerDevice` 结构体包含 `Usedcores` 和 `Usedmem` 字段。
 
-- `Usedcores` 代表分配的算力百分比（0-100）。
-- 如果 `Usedcores == 100`，通常意味着用户申请了完整的算力。
-
-我们需要遍历 `devreq`（即当前容器申请的设备列表），检查所有设备的 `Usedcores` 是否都为 `100`。
+需要判断Usedcores字段为0或者100 并且Usedmem等于所分配GPU的显存大小
 
 - 如果是：判定为整卡模式 (Whole Card Mode)。
 - 如果否：判定为共享模式 (Shared Mode)，保持原有逻辑。
@@ -45,12 +42,7 @@ HAMI (Heterogeneous AI Computing Virtualization Middleware) 主要用于共享 G
 ```go
 // 伪代码
 isWholeCard := true
-for _, dev := range devreq {
-    if dev.Usedcores < 100 {
-        isWholeCard = false
-        break
-    }
-}
+
 
 // ... 设置环境变量 ...
 
@@ -74,13 +66,10 @@ if !isWholeCard {
 
 ## 5. 验证计划
 
-1. **单元测试/模拟测试**：构造一个 `Usedcores=100` 的分配请求，验证 `Allocate` 返回的 `Mounts` 列表中不包含 `libvgpu.so`。
+1. **单元测试/模拟测试**：构造一个 `Usedcores=100,Usedmem=[GPU显存大小]`  的分配请求，验证 `Allocate` 返回的 `Mounts` 列表中不包含 `libvgpu.so`。
 2. **场景测试**：
-   - 提交一个申请整卡（`nvidia.com/gpu: 1` 且无显存分割配置）的 Pod。
+   - 提交一个申请整卡（`nvidia.com/gpu: 1`）的 Pod。
    - 进入 Pod，检查 `/etc/ld.so.preload` 是否存在，或者检查 `LD_PRELOAD` 环境变量。
    - 运行 3D 加速负载（如 `glxgears` 或相关 benchmark），验证是否正常运行且无 Bug。
 
-## 6. 待确认事项
 
-- `Usedcores` 是否是唯一的判断标准？是否需要结合 `Usedmem`？（通常 `Usedcores=100` 时 `Usedmem` 也会被配置为最大值，但以算力独占为整卡标志更为准确）。
-- 是否需要一个开关来控制乃至行为？（例如 Annotation `hami.io/usage-mode: graphics`？目前方案倾向于自动识别）。
