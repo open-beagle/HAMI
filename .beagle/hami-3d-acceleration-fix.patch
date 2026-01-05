@@ -1,16 +1,8 @@
 diff --git a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
-index 27aa750..3358ae4 100644
+index 27aa750..b6ee833 100644
 --- a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
 +++ b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
-@@ -46,6 +46,7 @@ import (
- 	"strings"
- 	"time"
- 
-+	"github.com/NVIDIA/go-nvml/pkg/nvml"
- 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
- 	"github.com/google/uuid"
- 	"golang.org/x/net/context"
-@@ -450,11 +451,19 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
+@@ -450,11 +450,19 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
  			}
  
  			if plugin.operatingMode != "mig" {
@@ -34,7 +26,7 @@ index 27aa750..3358ae4 100644
  				response.Envs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/vgpu/%v.cache", hostHookPath, uuid.New().String())
  				if plugin.schedulerConfig.DeviceMemoryScaling > 1 {
  					response.Envs["CUDA_OVERSUBSCRIBE"] = "true"
-@@ -472,49 +481,63 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
+@@ -472,49 +480,63 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
  				os.Chmod(cacheFileHostDirectory, 0777)
  				os.MkdirAll("/tmp/vgpulock", 0777)
  				os.Chmod("/tmp/vgpulock", 0777)
@@ -137,7 +129,7 @@ index 27aa750..3358ae4 100644
  			}
  			responses.ContainerResponses = append(responses.ContainerResponses, response)
  		}
-@@ -724,3 +747,54 @@ func (plugin *NvidiaDevicePlugin) processMigConfigs(migConfigs map[string]nvidia
+@@ -724,3 +746,40 @@ func (plugin *NvidiaDevicePlugin) processMigConfigs(migConfigs map[string]nvidia
  
  	return transformConfigs()
  }
@@ -148,46 +140,32 @@ index 27aa750..3358ae4 100644
 +// Returns false if any device has Usedcores < 100 or Usedmem < total GPU memory, indicating a shared allocation.
 +// In whole card mode, libvgpu.so and ld.so.preload are not mounted to allow direct access
 +// to the GPU driver, which enables 3D acceleration support.
-+func isWholeCardAllocation(devreq []util.ContainerDevice) bool {
++func (plugin *NvidiaDevicePlugin) isWholeCardAllocation(devreq []util.ContainerDevice) bool {
 +	if len(devreq) == 0 {
 +		return false
 +	}
 +
-+	// Initialize NVML to get GPU memory information
-+	if nvret := nvml.Init(); nvret != nvml.SUCCESS {
-+		klog.Warningf("Failed to initialize NVML: %v, assuming shared allocation", nvret)
-+		return false
-+	}
-+	defer nvml.Shutdown()
-+
++	devs := plugin.getAPIDevices()
 +	for _, dev := range devreq {
++
 +		// Check if cores are fully allocated (100%)
 +		if dev.Usedcores < 100 && dev.Usedcores > 0 {
-+			return false
-+		}
-+
-+		// Get the GPU device by UUID to check total memory
-+		ndev, ret := nvml.DeviceGetHandleByUUID(dev.UUID)
-+		if ret != nvml.SUCCESS {
-+			klog.Warningf("Failed to get device handle for UUID %s: %v, assuming shared allocation", dev.UUID, ret)
-+			return false
-+		}
-+
-+		// Get total memory of the GPU
-+		memInfo, ret := ndev.GetMemoryInfo()
-+		if ret != nvml.SUCCESS {
-+			klog.Warningf("Failed to get memory info for device %s: %v, assuming shared allocation", dev.UUID, ret)
++			klog.Infof("Device %s: Usedcores=%d, Totalcores=%d, not a whole card allocation", dev.UUID, dev.Usedmem, 100)
 +			return false
 +		}
 +
 +		// Convert total memory from bytes to MiB (same unit as Usedmem)
-+		totalMemMiB := int32(memInfo.Total / (1024 * 1024))
-+
-+		// Check if used memory equals total memory
-+		if dev.Usedmem != totalMemMiB {
-+			klog.Infof("Device %s: Usedmem=%d, TotalMem=%d, not a whole card allocation", dev.UUID, dev.Usedmem, totalMemMiB)
-+			return false
++		for _, v := range *devs {
++			if v.ID == dev.UUID {
++				// Check if used memory equals total memory
++				klog.Infof("Device %s: Usedmem=%d, TotalMem=%d, not a whole card allocation", dev.UUID, dev.Usedmem, v.Devmem)
++				if dev.Usedmem != v.Devmem {
++					klog.Infof("Device %s: Usedmem=%d, TotalMem=%d, not a whole card allocation", dev.UUID, dev.Usedmem, v.Devmem)
++					return false
++				}
++			}
 +		}
++
 +	}
 +
 +	return true
