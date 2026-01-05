@@ -1,5 +1,5 @@
 diff --git a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
-index 27aa750..b6ee833 100644
+index 27aa750..2ccd039 100644
 --- a/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
 +++ b/pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go
 @@ -450,11 +450,19 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
@@ -26,7 +26,7 @@ index 27aa750..b6ee833 100644
  				response.Envs["CUDA_DEVICE_MEMORY_SHARED_CACHE"] = fmt.Sprintf("%s/vgpu/%v.cache", hostHookPath, uuid.New().String())
  				if plugin.schedulerConfig.DeviceMemoryScaling > 1 {
  					response.Envs["CUDA_OVERSUBSCRIBE"] = "true"
-@@ -472,49 +480,63 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
+@@ -472,49 +480,66 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *kubeletdev
  				os.Chmod(cacheFileHostDirectory, 0777)
  				os.MkdirAll("/tmp/vgpulock", 0777)
  				os.Chmod("/tmp/vgpulock", 0777)
@@ -105,6 +105,9 @@ index 27aa750..b6ee833 100644
 +				} else {
 +					// In whole card mode, still mount the vgpu cache directory for tracking
 +					response.Mounts = append(response.Mounts,
++						&kubeletdevicepluginv1beta1.Mount{ContainerPath: fmt.Sprintf("%s/vgpu/libvgpu.so", hostHookPath),
++							HostPath: GetLibPath(),
++							ReadOnly: true},
 +						&kubeletdevicepluginv1beta1.Mount{ContainerPath: fmt.Sprintf("%s/vgpu", hostHookPath),
 +							HostPath: cacheFileHostDirectory,
 +							ReadOnly: false},
@@ -129,7 +132,7 @@ index 27aa750..b6ee833 100644
  			}
  			responses.ContainerResponses = append(responses.ContainerResponses, response)
  		}
-@@ -724,3 +746,40 @@ func (plugin *NvidiaDevicePlugin) processMigConfigs(migConfigs map[string]nvidia
+@@ -724,3 +749,40 @@ func (plugin *NvidiaDevicePlugin) processMigConfigs(migConfigs map[string]nvidia
  
  	return transformConfigs()
  }
