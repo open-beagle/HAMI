@@ -33,26 +33,23 @@ steps:
         from_secret: S3_SECRET_KEY_ALIYUN
 
   - name: build
-    image: registry.cn-qingdao.aliyuncs.com/wod/golang:v1.24.1-bullseye-amd64
-    pull: true
-    environment:
-      GOARCHS: amd64
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/golang:1.24
     commands:
       - sh .beagle/build.sh
 
   - name: docker-amd64
-    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
     volumes:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      base: registry.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1
+      base: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1
       dockerfile: .beagle/dockerfile
       repo: wod/hami
       Version: "v2.6.1-beagle"
       channel: amd64
       args: "TARGETOS=linux,TARGETARCH=amd64"
-      registry: registry.cn-qingdao.aliyuncs.com
+      registry: registry-vpc.cn-qingdao.aliyuncs.com
       registry_user:
         from_secret: REGISTRY_USER_ALIYUN
       registry_password:
@@ -74,7 +71,7 @@ kind: pipeline
 name: main
 steps:
   - name: harbor
-    image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-tag:1.0
     volumes:
       - name: docker
         path: /var/run/docker.sock
@@ -84,16 +81,16 @@ steps:
       REGISTRY_PASSWORD:
         from_secret: REGISTRY_PASSWORD_ALIYUN
     settings:
-      source: registry.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-amd64
-      target: registry.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
-      registry: registry.cn-qingdao.aliyuncs.com
+      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-amd64
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
+      registry: registry-vpc.cn-qingdao.aliyuncs.com
 
   # - name: docker-arch
-  #   image: registry.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
+  #   image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
   #   settings:
   #     platforms: linux/amd64,linux/arm64
-  #     template: registry.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-ARCH
-  #     target: registry.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
+  #     template: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-ARCH
+  #     target: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
   #     username:
   #       from_secret: REGISTRY_USER_ALIYUN
   #     password:
