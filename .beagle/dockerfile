@@ -11,4 +11,4 @@ LABEL maintainer=${AUTHOR} version=${VERSION}
 
 ADD ./bin/nvidia-device-plugin-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/nvidia-device-plugin
 ADD ./bin/scheduler-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/scheduler
-COPY /k8s-vgpu/lib/nvidia/libvgpu.so.v2.6.1 /k8s-vgpu/lib/nvidia/libvgpu.so."$VERSION"
+RUN cp /k8s-vgpu/lib/nvidia/libvgpu.so.v2.6.1 /k8s-vgpu/lib/nvidia/libvgpu.so."$VERSION"
