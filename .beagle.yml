@@ -34,6 +34,8 @@ steps:
 
   - name: build
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/golang:1.24
+    environment:
+      BUILD_VERSION: v2.6.1-beagle
     commands:
       - sh .beagle/build.sh
 
