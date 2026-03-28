@@ -4,8 +4,8 @@ set -ex
 # Environment Setup for nvidia/cuda container
 echo "Installing dependencies..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y && apt-get install -y gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget software-properties-common jq git
-wget https://dl.google.com/go/go1.22.5.linux-amd64.tar.gz -O /tmp/go.tar.gz && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
+apt-get update -y && apt-get install -y gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget curl software-properties-common jq git
+curl -skL https://cache.ali.wodcloud.com/vscode/ide/scripts/golang.sh | bash
 export PATH=$PATH:/usr/local/go/bin
 export GOPROXY="https://goproxy.cn,direct"
 

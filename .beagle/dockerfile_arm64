@@ -1,18 +1,18 @@
-ARG NVIDIA_BASE_IMAGE=registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-runtime-ubuntu22.04
-FROM $NVIDIA_BASE_IMAGE
+ARG BASE=ubuntu:22.04
+FROM $BASE
 
-RUN rm -rf /usr/local/cuda-*/compat/libcuda.so*
-ENV NVIDIA_DISABLE_REQUIRE="true"
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -y && apt-get install -y tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
 
 ARG AUTHOR=mengkzhaoyun@gmail.com
 ARG VERSION=v2.6.1-beagle
 ARG TARGETOS=linux
-ARG TARGETARCH=amd64
+ARG TARGETARCH=arm64
 LABEL maintainer=${AUTHOR} version=${VERSION}
 
 COPY ./LICENSE /k8s-vgpu/LICENSE
+
+# K8s Scheduler 主控与组件
 COPY ./bin/nvidia-device-plugin-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/nvidia-device-plugin
 COPY ./bin/scheduler-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/scheduler
 COPY ./bin/vGPUmonitor-${VERSION}-${TARGETOS}-${TARGETARCH} /k8s-vgpu/bin/vGPUmonitor
@@ -20,9 +20,8 @@ COPY ./bin/nvidia-mig-parted /k8s-vgpu/bin/nvidia-mig-parted
 COPY ./docker/entrypoint.sh /k8s-vgpu/bin/entrypoint.sh
 COPY ./docker/vgpu-init.sh /k8s-vgpu/bin/vgpu-init.sh
 
-# 复制其他核心库和上一步流水线刚刚用 CMake/Nvcc 混合编译出来的核心劫持驱动
+# ARM64 信创环境（如包含华为华为算力的节点）不加载 nvidia 的底层 libvgpu.so 劫持库，因此无需拷贝编译出的 so
 COPY ./lib /k8s-vgpu/lib
-COPY ./bin/libvgpu.so /k8s-vgpu/lib/nvidia/libvgpu.so."$VERSION"
 
 ENV PATH="/k8s-vgpu/bin:${PATH}"
 ARG DEST_DIR
