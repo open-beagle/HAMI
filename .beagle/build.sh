@@ -2,9 +2,12 @@
 set -ex
 
 # Environment Setup for nvidia/cuda container
+echo "Configuring Aliyun APT mirrors..."
+sed -i -e 's/archive.ubuntu.com/mirrors.aliyun.com/g' -e 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+
 echo "Installing dependencies..."
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y && apt-get install -y gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget curl software-properties-common jq git
+apt-get update -y && apt-get install -y sudo gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget curl software-properties-common jq git
 curl -skL https://cache.ali.wodcloud.com/vscode/ide/scripts/golang.sh | bash
 export PATH=$PATH:/usr/local/go/bin
 export GOPROXY="https://goproxy.cn,direct"

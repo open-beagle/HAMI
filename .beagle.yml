@@ -23,7 +23,7 @@ steps:
   - name: build
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-devel-ubuntu24.04
     environment:
-      BUILD_VERSION: v2.6.1-beagle
+      BUILD_VERSION: v2.6.1
     commands:
       - sh .beagle/build.sh
 
@@ -36,7 +36,7 @@ steps:
       base: registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-runtime-ubuntu22.04
       dockerfile: .beagle/dockerfile
       repo: wod/hami
-      Version: "v2.6.1-beagle"
+      Version: "v2.6.1"
       channel: amd64
       args: "TARGETOS=linux,TARGETARCH=amd64"
       registry: registry-vpc.cn-qingdao.aliyuncs.com
@@ -54,7 +54,7 @@ steps:
       base: registry-vpc.cn-qingdao.aliyuncs.com/wod/ubuntu:22.04-arm64
       dockerfile: .beagle/dockerfile_arm64
       repo: wod/hami
-      Version: "v2.6.1-beagle"
+      Version: "v2.6.1"
       channel: arm64
       args: "TARGETOS=linux,TARGETARCH=arm64"
       registry: registry-vpc.cn-qingdao.aliyuncs.com
@@ -67,8 +67,8 @@ steps:
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
     settings:
       platforms: linux/amd64,linux/arm64
-      template: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle-ARCH
-      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle
+      template: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-ARCH
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1
       username:
         from_secret: REGISTRY_USER_ALIYUN
       password:
@@ -92,8 +92,8 @@ steps:
       REGISTRY_PASSWORD:
         from_secret: REGISTRY_PASSWORD_ALIYUN
     settings:
-      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle-amd64
-      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-beagle-amd64
+      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-amd64
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-amd64
       registry: registry-vpc.cn-qingdao.aliyuncs.com
 
   - name: harbor-arm64
@@ -104,16 +104,16 @@ steps:
       REGISTRY_PASSWORD:
         from_secret: REGISTRY_PASSWORD_ALIYUN
     settings:
-      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle-arm64
-      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-beagle-arm64
+      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-arm64
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-arm64
       registry: registry-vpc.cn-qingdao.aliyuncs.com
 
   - name: harbor-arch
     image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
     settings:
       platforms: linux/amd64,linux/arm64
-      template: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-beagle-ARCH
-      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-beagle
+      template: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6-ARCH
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6
       username:
         from_secret: REGISTRY_USER_ALIYUN
       password:
