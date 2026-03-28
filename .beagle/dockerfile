@@ -1,5 +1,5 @@
-ARG NVIDIA_BASE_IMAGE=registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-runtime-ubuntu22.04
-FROM $NVIDIA_BASE_IMAGE
+ARG BASE=registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-runtime-ubuntu22.04
+FROM $BASE
 
 RUN rm -rf /usr/local/cuda-*/compat/libcuda.so*
 ENV NVIDIA_DISABLE_REQUIRE="true"
