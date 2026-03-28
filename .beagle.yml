@@ -33,7 +33,7 @@ steps:
         from_secret: S3_SECRET_KEY_ALIYUN
 
   - name: build
-    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/golang:1.24
+    image: nvidia/cuda:12.6.3-devel-ubuntu20.04
     environment:
       BUILD_VERSION: v2.6.1-beagle
     commands:
@@ -45,12 +45,30 @@ steps:
       - name: docker
         path: /var/run/docker.sock
     settings:
-      base: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1
+      base: nvidia/cuda:12.6.3-base-ubuntu20.04
       dockerfile: .beagle/dockerfile
       repo: wod/hami
       Version: "v2.6.1-beagle"
       channel: amd64
       args: "TARGETOS=linux,TARGETARCH=amd64"
+      registry: registry-vpc.cn-qingdao.aliyuncs.com
+      registry_user:
+        from_secret: REGISTRY_USER_ALIYUN
+      registry_password:
+        from_secret: REGISTRY_PASSWORD_ALIYUN
+
+  - name: docker-arm64
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker:1.0
+    volumes:
+      - name: docker
+        path: /var/run/docker.sock
+    settings:
+      base: nvidia/cuda:12.6.3-base-ubuntu20.04
+      dockerfile: .beagle/dockerfile
+      repo: wod/hami
+      Version: "v2.6.1-beagle"
+      channel: arm64
+      args: "TARGETOS=linux,TARGETARCH=arm64"
       registry: registry-vpc.cn-qingdao.aliyuncs.com
       registry_user:
         from_secret: REGISTRY_USER_ALIYUN
@@ -75,20 +93,20 @@ steps:
       REGISTRY_PASSWORD:
         from_secret: REGISTRY_PASSWORD_ALIYUN
     settings:
-      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-amd64
-      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
+      source: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle-amd64
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle
       registry: registry-vpc.cn-qingdao.aliyuncs.com
 
-  # - name: docker-arch
-  #   image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
-  #   settings:
-  #     platforms: linux/amd64,linux/arm64
-  #     template: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1-ARCH
-  #     target: registry-vpc.cn-qingdao.aliyuncs.com/wod/beagle-hami:v2.6.1
-  #     username:
-  #       from_secret: REGISTRY_USER_ALIYUN
-  #     password:
-  #       from_secret: REGISTRY_PASSWORD_ALIYUN
+  - name: docker-arch
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/devops-docker-manifest:1.0
+    settings:
+      platforms: linux/amd64,linux/arm64
+      template: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle-ARCH
+      target: registry-vpc.cn-qingdao.aliyuncs.com/wod/hami:v2.6.1-beagle
+      username:
+        from_secret: REGISTRY_USER_ALIYUN
+      password:
+        from_secret: REGISTRY_PASSWORD_ALIYUN
 ---
 kind: secret
 name: SOCKS5_PROXY
