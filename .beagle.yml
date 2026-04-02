@@ -21,7 +21,7 @@ steps:
         from_secret: SOCKS5_PROXY
 
   - name: build
-    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-devel-ubuntu24.04
+    image: registry-vpc.cn-qingdao.aliyuncs.com/wod/cuda:12.6.3-devel-ubuntu22.04
     environment:
       BUILD_VERSION: v2.6.1
     commands:
