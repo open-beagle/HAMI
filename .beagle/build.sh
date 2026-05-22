@@ -16,8 +16,14 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH=$PATH:/usr/local/go/bin
 export GOPROXY="https://goproxy.cn,direct"
 
-git config --global --add safe.directory "$(pwd)"
-git config --global --add safe.directory "$(pwd)/libvgpu"
+REPO_ROOT=$(pwd)
+SUDO=""
+if [ "${EUID}" -ne 0 ]; then
+  SUDO="sudo"
+fi
+
+git config --global --add safe.directory "${REPO_ROOT}"
+git config --global --add safe.directory "${REPO_ROOT}/libvgpu"
 
 if [ -f /etc/beagle-hami-builder-ready ]; then
   echo "Using prebuilt Beagle HAMi builder image"
@@ -27,14 +33,14 @@ if [ -f /etc/beagle-hami-builder-ready ]; then
   cmake --version | head -1
 else
   echo "Configuring Aliyun APT mirrors..."
-  sed -i -e 's/archive.ubuntu.com/mirrors.aliyun.com/g' -e 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
+  ${SUDO} sed -i -e 's/archive.ubuntu.com/mirrors.aliyun.com/g' -e 's/security.ubuntu.com/mirrors.aliyun.com/g' /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true
 
   echo "Installing dependencies..."
-  apt-get update -y
+  ${SUDO} apt-get update -y
   if [ "${BUILD_TARGET}" = "scheduler-arm64" ]; then
-    apt-get install -y sudo gcc-aarch64-linux-gnu g++-aarch64-linux-gnu wget curl software-properties-common jq git
+    ${SUDO} apt-get install -y sudo gcc-aarch64-linux-gnu g++-aarch64-linux-gnu wget curl software-properties-common jq git
   else
-    apt-get install -y sudo gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget curl software-properties-common jq git
+    ${SUDO} apt-get install -y sudo gcc g++ gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake wget curl software-properties-common jq git
   fi
   if ! command -v go >/dev/null 2>&1; then
     curl -skL https://cache.ali.wodcloud.com/vscode/ide/scripts/golang.sh | bash
@@ -63,6 +69,7 @@ apply_patch_if_clean() {
 cleanup_patches() {
   local patch_file
 
+  cd "${REPO_ROOT}"
   for ((idx=${#APPLIED_PATCHES[@]}-1; idx>=0; idx--)); do
     patch_file=${APPLIED_PATCHES[$idx]}
     git apply -R "${patch_file}"
@@ -92,14 +99,15 @@ if [ "${BUILD_TARGET}" = "all" ] || [ "${BUILD_TARGET}" = "cuda-amd64" ]; then
 
   echo "Building NVIDIA mig-parted utility for linux/amd64..."
   go mod tidy
-  GOBIN=$(pwd)/${OUTPUT_DIR} GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go install github.com/NVIDIA/mig-parted/cmd/nvidia-mig-parted@v0.10.0
+  GOBIN=$(pwd)/${OUTPUT_DIR} CC=gcc GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go install github.com/NVIDIA/mig-parted/cmd/nvidia-mig-parted@v0.10.0
   mv ${OUTPUT_DIR}/nvidia-mig-parted ${OUTPUT_DIR}/nvidia-mig-parted-linux-amd64
 
   echo "Building libvgpu.so (C++ Hook Library) for linux/amd64..."
+  rm -rf libvgpu/build
   cd libvgpu
   bash ./build.sh
   cp build/libvgpu.so ../${OUTPUT_DIR}/libvgpu.so
-  cd ../
+  cd "${REPO_ROOT}"
 
   echo "libvgpu.so compiler metadata:"
   readelf -p .comment ${OUTPUT_DIR}/libvgpu.so || true

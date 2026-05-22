@@ -24,7 +24,6 @@ ARG GO_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
-ENV GOPROXY=https://goproxy.cn,direct
 ENV PATH=/usr/local/go/bin:${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${CUDA_HOME}/lib64/stubs:${LD_LIBRARY_PATH}
 
