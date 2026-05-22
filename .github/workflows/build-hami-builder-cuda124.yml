@@ -1,6 +1,12 @@
 name: Build HAMi CUDA 12.4 Builder
 
 on:
+  push:
+    branches:
+      - build-cuda
+    paths:
+      - .beagle/hami-builder-cuda124.Dockerfile
+      - .github/workflows/build-hami-builder-cuda124.yml
   workflow_dispatch:
 
 env:

@@ -16,6 +16,8 @@ export DEBIAN_FRONTEND=noninteractive
 export PATH=$PATH:/usr/local/go/bin
 export GOPROXY="https://goproxy.cn,direct"
 
+git config --global --add safe.directory "$(pwd)"
+
 if [ -f /etc/beagle-hami-builder-ready ]; then
   echo "Using prebuilt Beagle HAMi builder image"
   cat /etc/os-release
