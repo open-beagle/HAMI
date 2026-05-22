@@ -42,8 +42,8 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/hami:v2-cuda124-builder
-            registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder
+            ghcr.io/${{ github.repository_owner }}/hami:cuda124-builder
+            registry.cn-qingdao.aliyuncs.com/wod/hami:cuda124-builder
           build-args: |
             BASE=nvidia/cuda:12.4.1-devel-ubuntu22.04
             GO_VERSION=${{ env.GO_VERSION }}
