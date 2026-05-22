@@ -42,11 +42,15 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 
 	"github.com/Project-HAMi/HAMi/pkg/device/nvidia"
 	"github.com/Project-HAMi/HAMi/pkg/device/overcommit"
 	"github.com/Project-HAMi/HAMi/pkg/util"
+	"github.com/Project-HAMi/HAMi/pkg/util/client"
 )
 
 func (plugin *NvidiaDevicePlugin) getNumaInformation(idx int) (int, error) {
@@ -255,6 +259,81 @@ func (plugin *NvidiaDevicePlugin) WatchAndRegister() {
 		} else {
 			klog.Infof("Successfully registered annotation. Next check in %v seconds...", successSleepInterval)
 			time.Sleep(successSleepInterval)
+		}
+	}
+}
+
+// watchSplitCountAnnotation watches the current Node and applies split-count updates immediately.
+func (plugin *NvidiaDevicePlugin) watchSplitCountAnnotation() {
+	klog.Info("Starting watchSplitCountAnnotation")
+	kubeClient := client.GetClient()
+	informerFactory := informers.NewSharedInformerFactoryWithOptions(kubeClient, time.Hour)
+	informerFactory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj any) {
+			n, ok := obj.(*corev1.Node)
+			if !ok || n.Name != util.NodeName {
+				return
+			}
+			plugin.applySplitCountFromNode(n)
+		},
+		UpdateFunc: func(oldObj, newObj any) {
+			oldN, ok1 := oldObj.(*corev1.Node)
+			newN, ok2 := newObj.(*corev1.Node)
+			if !ok1 || !ok2 || newN.Name != util.NodeName {
+				return
+			}
+			oldVal := ""
+			if oldN.Annotations != nil {
+				oldVal = strings.TrimSpace(oldN.Annotations[deviceSplitCountAnnotationKey])
+			}
+			newVal := ""
+			if newN.Annotations != nil {
+				newVal = strings.TrimSpace(newN.Annotations[deviceSplitCountAnnotationKey])
+			}
+			if oldVal == newVal {
+				return
+			}
+			plugin.applySplitCountFromNode(newN)
+		},
+	})
+
+	stopCh := make(chan struct{})
+	go func() {
+		informerFactory.Start(stopCh)
+		informerFactory.WaitForCacheSync(stopCh)
+	}()
+
+	go func() {
+		<-plugin.stop
+		close(stopCh)
+	}()
+}
+
+func (plugin *NvidiaDevicePlugin) applySplitCountFromNode(node *corev1.Node) {
+	val := ""
+	if node.Annotations != nil {
+		val = strings.TrimSpace(node.Annotations[deviceSplitCountAnnotationKey])
+	}
+	if val == "" {
+		if plugin.schedulerConfig.DeviceSplitCount != plugin.defaultSplitCount {
+			plugin.schedulerConfig.DeviceSplitCount = plugin.defaultSplitCount
+			select {
+			case plugin.deviceSplitCountChange <- true:
+			default:
+			}
+			klog.Infof("Annotation removed or empty, restored DeviceSplitCount to default %d", plugin.defaultSplitCount)
+		}
+		return
+	}
+	if n, err := strconv.ParseUint(val, 10, 32); err == nil {
+		newSplit := uint(n)
+		if newSplit > 0 && newSplit != plugin.schedulerConfig.DeviceSplitCount {
+			plugin.schedulerConfig.DeviceSplitCount = newSplit
+			select {
+			case plugin.deviceSplitCountChange <- true:
+			default:
+			}
+			klog.Infof("Updated DeviceSplitCount to %d from annotation", newSplit)
 		}
 	}
 }

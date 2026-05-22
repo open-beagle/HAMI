@@ -57,12 +57,16 @@ mkdir -p ${OUTPUT_DIR}
 APPLIED_PATCHES=()
 
 apply_patch_if_clean() {
-  local watch_file=$1
-  local patch_file=$2
+  local patch_file=$1
 
-  if git diff --quiet "${watch_file}"; then
+  if git apply --reverse --check "${patch_file}" >/dev/null 2>&1; then
+    echo "Patch ${patch_file} already applied"
+  elif git apply --check "${patch_file}"; then
     git apply "${patch_file}"
     APPLIED_PATCHES+=("${patch_file}")
+  else
+    echo "Failed to apply patch ${patch_file}"
+    exit 1
   fi
 }
 
@@ -78,12 +82,8 @@ cleanup_patches() {
 
 trap cleanup_patches EXIT
 
-# Apply split-count patch
-apply_patch_if_clean pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go .beagle/split-count.patch
-apply_patch_if_clean pkg/device-plugin/nvidiadevice/nvinternal/plugin/server.go .beagle/hami-3d-acceleration-fix.patch
-
-# Apply node-gpu-usage patch
-apply_patch_if_clean pkg/scheduler/scheduler.go .beagle/node-gpu-usage.patch
+# Apply patches not yet merged into the source tree.
+apply_patch_if_clean .beagle/hami-3d-acceleration-fix.patch
 
 git submodule update --init --recursive
 

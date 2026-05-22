@@ -67,6 +67,7 @@ const (
 	deviceListAsVolumeMountsHostPath          = "/dev/null"
 	deviceListAsVolumeMountsContainerPathRoot = "/var/run/nvidia-container-devices"
 	NodeLockNvidia                            = "hami.io/mutex.lock"
+	deviceSplitCountAnnotationKey             = "hami.io/device-split-count"
 )
 
 var (
@@ -86,6 +87,7 @@ type NvidiaDevicePlugin struct {
 	deviceListStrategies spec.DeviceListStrategies
 	socket               string
 	schedulerConfig      nvidia.NvidiaConfig
+	defaultSplitCount    uint
 
 	cdiHandler          cdi.Interface
 	cdiEnabled          bool
@@ -97,6 +99,8 @@ type NvidiaDevicePlugin struct {
 	server *grpc.Server
 	health chan *rm.Device
 	stop   chan any
+
+	deviceSplitCountChange chan bool
 }
 
 func readFromConfigFile(sConfig *nvidia.NvidiaConfig) (string, error) {
@@ -169,6 +173,7 @@ func NewNvidiaDevicePlugin(config *nvidia.DeviceConfig, resourceManager rm.Resou
 		cdiEnabled:           cdiEnabled,
 		cdiAnnotationPrefix:  *config.Flags.Plugin.CDIAnnotationPrefix,
 		schedulerConfig:      sConfig.NvidiaConfig,
+		defaultSplitCount:    sConfig.NvidiaConfig.DeviceSplitCount,
 		operatingMode:        mode,
 		migCurrent:           nvidia.MigPartedSpec{},
 
@@ -184,6 +189,7 @@ func (plugin *NvidiaDevicePlugin) initialize() {
 	plugin.server = grpc.NewServer([]grpc.ServerOption{}...)
 	plugin.health = make(chan *rm.Device)
 	plugin.stop = make(chan any)
+	plugin.deviceSplitCountChange = make(chan bool, 1)
 }
 
 func (plugin *NvidiaDevicePlugin) cleanup() {
@@ -191,6 +197,7 @@ func (plugin *NvidiaDevicePlugin) cleanup() {
 	plugin.server = nil
 	plugin.health = nil
 	plugin.stop = nil
+	plugin.deviceSplitCountChange = nil
 }
 
 // Devices returns the full set of devices associated with the plugin.
@@ -253,6 +260,10 @@ func (plugin *NvidiaDevicePlugin) Start() error {
 
 	go func() {
 		plugin.WatchAndRegister()
+	}()
+
+	go func() {
+		plugin.watchSplitCountAnnotation()
 	}()
 
 	return nil
@@ -367,6 +378,9 @@ func (plugin *NvidiaDevicePlugin) ListAndWatch(e *kubeletdevicepluginv1beta1.Emp
 			// FIXME: there is no way to recover from the Unhealthy state.
 			d.Health = kubeletdevicepluginv1beta1.Unhealthy
 			klog.Infof("'%s' device marked unhealthy: %s", plugin.rm.Resource(), d.ID)
+			s.Send(&kubeletdevicepluginv1beta1.ListAndWatchResponse{Devices: plugin.apiDevices()})
+		case <-plugin.deviceSplitCountChange:
+			klog.Infof("Runtime configuration changed, updating device list for '%s'", plugin.rm.Resource())
 			s.Send(&kubeletdevicepluginv1beta1.ListAndWatchResponse{Devices: plugin.apiDevices()})
 		}
 	}
