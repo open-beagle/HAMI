@@ -109,6 +109,14 @@ func TestGPUOvercommitFit(t *testing.T) {
 			fit:     true,
 		},
 		{
+			name:    "enabled annotation alone activates overcommit without split count annotation",
+			node:    overcommitNode("GPU-0", time.Now(), 10, true),
+			device:  device,
+			request: util.ContainerDeviceRequest{Type: nvidia.NvidiaGPUDevice, Memreq: 24000},
+			checked: true,
+			fit:     true,
+		},
+		{
 			name:        "normal load rejects full card",
 			node:        overcommitNode("GPU-0", time.Now(), 20, true),
 			device:      device,

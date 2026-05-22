@@ -2174,6 +2174,7 @@ func Test_fitInCertainDevice_GPUOvercommit(t *testing.T) {
 		wantFit     bool
 	}{
 		{name: "low load allows full card despite used accounting", utilization: 19, requestMem: 24000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
+		{name: "enabled annotation alone allows full card without split count annotation", utilization: 10, requestMem: 24000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
 		{name: "normal load rejects full card", utilization: 20, requestMem: 24000, used: 1, usedmem: 0, usedcores: 0, wantFit: false},
 		{name: "normal load allows half card", utilization: 20, requestMem: 12000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
 		{name: "high watermark rejects half card", utilization: 60, requestMem: 12000, used: 1, usedmem: 0, usedcores: 0, wantFit: false},
