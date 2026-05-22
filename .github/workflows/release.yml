@@ -42,4 +42,3 @@ jobs:
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
           docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-cuda
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-cann

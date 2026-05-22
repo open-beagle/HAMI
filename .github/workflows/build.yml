@@ -21,4 +21,4 @@ jobs:
           echo "main only tracks source changes for HAMi ${BUILD_VERSION}."
           echo "Use scheduler to build scheduler images: hami:${BUILD_VERSION}-amd64 and hami:${BUILD_VERSION}-arm64."
           echo "Use build-cuda to build the NVIDIA CUDA plugin image: hami:${BUILD_VERSION}-cuda."
-          echo "Use cann to publish the Ascend/CANN plugin image: hami:${BUILD_VERSION}-cann."
+          echo "Use ascend-device-plugin/.beagle.yml to publish the Ascend/CANN plugin image: hami:${BUILD_VERSION}-cann."
