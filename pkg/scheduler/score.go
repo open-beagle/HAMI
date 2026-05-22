@@ -132,27 +132,36 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 			//This incurs an issue
 			memreq = dev.Totalmem * k.MemPercentagereq / 100
 		}
-		if dev.Totalmem-dev.Usedmem < memreq {
-			reason[cardInsufficientMemory]++
-			klog.V(5).InfoS(cardInsufficientMemory, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total memory", dev.Totalmem, "device used memory", dev.Usedmem, "request memory", memreq)
-			continue
-		}
-		if dev.Totalcore-dev.Usedcores < k.Coresreq {
-			reason[cardInsufficientCore]++
-			klog.V(5).InfoS(cardInsufficientCore, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total core", dev.Totalcore, "device used core", dev.Usedcores, "request cores", k.Coresreq)
-			continue
-		}
-		// Coresreq=100 indicates it want this card exclusively
-		if dev.Totalcore == 100 && k.Coresreq == 100 && dev.Used > 0 {
-			reason[exclusiveDeviceAllocateConflict]++
-			klog.V(5).InfoS(exclusiveDeviceAllocateConflict, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "used", dev.Used)
-			continue
-		}
-		// You can't allocate core=0 job to an already full GPU
-		if dev.Totalcore != 0 && dev.Usedcores == dev.Totalcore && k.Coresreq == 0 {
-			reason[cardComputeUnitsExhausted]++
-			klog.V(5).InfoS(cardComputeUnitsExhausted, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i)
-			continue
+		overcommitChecked, overcommitFit, overcommitReason := gpuOvercommitFit(node.Node, dev, k)
+		if overcommitChecked {
+			if !overcommitFit {
+				reason[overcommitReason]++
+				klog.V(5).InfoS(overcommitReason, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "request memory", memreq)
+				continue
+			}
+		} else {
+			if dev.Totalmem-dev.Usedmem < memreq {
+				reason[cardInsufficientMemory]++
+				klog.V(5).InfoS(cardInsufficientMemory, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total memory", dev.Totalmem, "device used memory", dev.Usedmem, "request memory", memreq)
+				continue
+			}
+			if dev.Totalcore-dev.Usedcores < k.Coresreq {
+				reason[cardInsufficientCore]++
+				klog.V(5).InfoS(cardInsufficientCore, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total core", dev.Totalcore, "device used core", dev.Usedcores, "request cores", k.Coresreq)
+				continue
+			}
+			// Coresreq=100 indicates it want this card exclusively
+			if dev.Totalcore == 100 && k.Coresreq == 100 && dev.Used > 0 {
+				reason[exclusiveDeviceAllocateConflict]++
+				klog.V(5).InfoS(exclusiveDeviceAllocateConflict, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "used", dev.Used)
+				continue
+			}
+			// You can't allocate core=0 job to an already full GPU
+			if dev.Totalcore != 0 && dev.Usedcores == dev.Totalcore && k.Coresreq == 0 {
+				reason[cardComputeUnitsExhausted]++
+				klog.V(5).InfoS(cardComputeUnitsExhausted, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i)
+				continue
+			}
 		}
 		if !device.GetDevices()[k.Type].CustomFilterRule(allocated, request, tmpDevs[k.Type], dev) {
 			reason[cardNotFoundCustomFilterRule]++

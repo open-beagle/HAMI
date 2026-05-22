@@ -6,7 +6,7 @@ on:
       - build-cuda
 
 env:
-  BUILD_VERSION: v2.6.2
+  BUILD_VERSION: v2.6.3
   HAMI_BUILDER_IMAGE: ghcr.io/${{ github.repository_owner }}/hami:v2-cuda124-builder
 
 jobs:

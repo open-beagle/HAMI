@@ -45,6 +45,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/Project-HAMi/HAMi/pkg/device/nvidia"
+	"github.com/Project-HAMi/HAMi/pkg/device/overcommit"
 	"github.com/Project-HAMi/HAMi/pkg/util"
 )
 
@@ -208,6 +209,29 @@ func (plugin *NvidiaDevicePlugin) RegistrInAnnotation() error {
 	annos[nvidia.RegisterAnnos] = encodeddevices
 	if len(data) > 0 {
 		annos[nvidia.RegisterGPUPairScore] = string(data)
+	}
+	if overcommit.Enabled(node.Annotations) {
+		state, ownedIDs, err := plugin.collectGPUOvercommitState(*devices)
+		if err != nil {
+			klog.ErrorS(err, "collect gpu overcommit state failed")
+			err = patchGPUOvercommitState(node.Name, func(annotations map[string]string) (string, error) {
+				return overcommit.ClearState(annotations[overcommit.StateAnnotation], ownedIDs)
+			})
+		} else {
+			err = patchGPUOvercommitState(node.Name, func(annotations map[string]string) (string, error) {
+				return overcommit.MergeState(annotations[overcommit.StateAnnotation], ownedIDs, state)
+			})
+		}
+		if err != nil {
+			klog.ErrorS(err, "patch gpu overcommit state failed")
+		}
+	} else if _, ok := node.Annotations[overcommit.StateAnnotation]; ok {
+		err := patchGPUOvercommitState(node.Name, func(annotations map[string]string) (string, error) {
+			return overcommit.ClearState(annotations[overcommit.StateAnnotation], gpuOvercommitDeviceIDs(*devices))
+		})
+		if err != nil {
+			klog.ErrorS(err, "clear gpu overcommit state failed")
+		}
 	}
 	klog.Infof("patch node with the following annos %v", fmt.Sprintf("%v", annos))
 	err = util.PatchNodeAnnotations(node, annos)

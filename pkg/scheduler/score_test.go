@@ -17,9 +17,11 @@ limitations under the License.
 package scheduler
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gotest.tools/v3/assert"
 	corev1 "k8s.io/api/core/v1"
@@ -28,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/Project-HAMi/HAMi/pkg/device"
+	"github.com/Project-HAMi/HAMi/pkg/device/overcommit"
 	"github.com/Project-HAMi/HAMi/pkg/device/hygon"
 	"github.com/Project-HAMi/HAMi/pkg/device/metax"
 	"github.com/Project-HAMi/HAMi/pkg/device/nvidia"
@@ -2156,6 +2159,83 @@ func Test_fitInCertainDevice(t *testing.T) {
 			assert.DeepEqual(t, result1, test.want1)
 			assert.DeepEqual(t, result2, test.want2)
 			assert.DeepEqual(t, convertReasonToMap(result3), test.want3)
+		})
+	}
+}
+
+func Test_fitInCertainDevice_GPUOvercommit(t *testing.T) {
+	tests := []struct {
+		name        string
+		utilization uint32
+		requestMem  int32
+		used        int32
+		usedmem     int32
+		usedcores   int32
+		wantFit     bool
+	}{
+		{name: "low load allows full card despite used accounting", utilization: 19, requestMem: 24000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
+		{name: "normal load rejects full card", utilization: 20, requestMem: 24000, used: 1, usedmem: 0, usedcores: 0, wantFit: false},
+		{name: "normal load allows half card", utilization: 20, requestMem: 12000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
+		{name: "high watermark rejects half card", utilization: 60, requestMem: 12000, used: 1, usedmem: 0, usedcores: 0, wantFit: false},
+		{name: "high watermark allows quarter card", utilization: 60, requestMem: 6000, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
+		{name: "full load rejects quarter card", utilization: 80, requestMem: 6000, used: 1, usedmem: 0, usedcores: 0, wantFit: false},
+		{name: "full load allows ten percent card", utilization: 80, requestMem: 2400, used: 1, usedmem: 24000, usedcores: 100, wantFit: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			level, percent, limit := overcommit.MaxMemory(24000, test.utilization)
+			state := overcommit.State{
+				"GPU-0": {
+					GPUUtilization:   test.utilization,
+					LoadLevel:        level,
+					MaxMemoryPercent: percent,
+					MaxMemoryLimit:   limit,
+					UpdatedAt:        time.Now(),
+				},
+			}
+			stateJSON, err := json.Marshal(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			node := &NodeUsage{
+				Node: &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+					Name: "node-1",
+					Annotations: map[string]string{
+						overcommit.Annotation:      "true",
+						overcommit.StateAnnotation: string(stateJSON),
+					},
+				}},
+				Devices: policy.DeviceUsageList{
+					DeviceLists: []*policy.DeviceListsScore{
+						{
+							Device: &util.DeviceUsage{
+								ID:        "GPU-0",
+								Numa:      0,
+								Type:      nvidia.NvidiaGPUDevice,
+								Used:      test.used,
+								Count:     8,
+								Totalmem:  24000,
+								Usedmem:   test.usedmem,
+								Usedcores: test.usedcores,
+								Totalcore: 100,
+							},
+						},
+					},
+				},
+			}
+			gotFit, gotDevices, _ := fitInCertainDevice(node, util.ContainerDeviceRequest{
+				Nums:     1,
+				Type:     nvidia.NvidiaGPUDevice,
+				Memreq:   test.requestMem,
+				Coresreq: 100,
+			}, map[string]string{}, &corev1.Pod{}, &util.PodDevices{})
+			if gotFit != test.wantFit {
+				t.Fatalf("fit = %v, want %v", gotFit, test.wantFit)
+			}
+			if test.wantFit && gotDevices[nvidia.NvidiaGPUDevice][0].Usedmem != test.requestMem {
+				t.Fatalf("allocated memory = %d, want %d", gotDevices[nvidia.NvidiaGPUDevice][0].Usedmem, test.requestMem)
+			}
 		})
 	}
 }
