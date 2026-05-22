@@ -1,21 +1,18 @@
-name: Build Release Images
+name: Verify Release Images
 
 on:
   push:
     branches:
-      - release-v2.6
+      - release-v2.6.2
 
 env:
-  BUILD_VERSION: v2.6.1
+  BUILD_VERSION: v2.6.2
 
 jobs:
-  sync-upstream:
-    name: Sync Upstream Images
+  verify-images:
+    name: Verify Final Image Tags
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Login to Github Container Registry
         uses: docker/login-action@v2
         with:
@@ -33,30 +30,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Pull and push upstream images - amd64
+      - name: Verify Aliyun image tags
         run: |
-          docker pull --platform linux/amd64 projecthami/hami:${{ env.BUILD_VERSION }}
-          docker tag projecthami/hami:${{ env.BUILD_VERSION }} ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
-          docker tag projecthami/hami:${{ env.BUILD_VERSION }} registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64
-          docker push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
-          docker push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64
+          docker buildx imagetools inspect registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64
+          docker buildx imagetools inspect registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
+          docker buildx imagetools inspect registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-cuda
+          docker buildx imagetools inspect registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-cann
 
-      - name: Pull and push upstream images - arm64
+      - name: Verify GHCR image tags
         run: |
-          docker pull --platform linux/arm64 projecthami/hami:${{ env.BUILD_VERSION }}
-          docker tag projecthami/hami:${{ env.BUILD_VERSION }} ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
-          docker tag projecthami/hami:${{ env.BUILD_VERSION }} registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
-          docker push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
-          docker push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
-
-      - name: Create and push multi-arch manifest
-        run: |
-          docker manifest create ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }} \
-            ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64 \
-            ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
-          docker manifest push ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}
-
-          docker manifest create registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }} \
-            registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-amd64 \
-            registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-arm64
-          docker manifest push registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-amd64
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-arm64
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-cuda
+          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-cann

@@ -5,7 +5,7 @@
 ```bash
 git remote add upstream https://github.com/Project-HAMi/HAMi.git
 git fetch upstream
-git merge v2.6.1
+git merge v2.6.2
 ```
 
 ## debug
@@ -15,7 +15,7 @@ git merge v2.6.1
 docker run -it --rm \
   -v $PWD:/go/src/github.com/Project-HAMi/HAMi \
   -w /go/src/github.com/Project-HAMi/HAMi \
-  -e BUILD_VERSION=v2.6.1 \
+  -e BUILD_VERSION=v2.6.2 \
   -u 1000:1000 \
   registry.cn-qingdao.aliyuncs.com/wod/golang:1.24 \
   go mod vendor
@@ -24,8 +24,26 @@ docker run -it --rm \
 docker run -it --rm \
   -v $PWD:/go/src/github.com/Project-HAMi/HAMi \
   -w /go/src/github.com/Project-HAMi/HAMi \
-  -e BUILD_VERSION=v2.6.1 \
+  -e BUILD_VERSION=v2.6.2 \
   -u 1000:1000 \
+  registry.cn-qingdao.aliyuncs.com/wod/golang:1.24 \
+  bash .beagle/build.sh
+
+# build amd64 CUDA / libvgpu.so with the dedicated builder
+docker run -it --rm \
+  -v $PWD:/go/src/github.com/Project-HAMi/HAMi \
+  -w /go/src/github.com/Project-HAMi/HAMi \
+  -e BUILD_VERSION=v2.6.2 \
+  -e BUILD_TARGET=cuda-amd64 \
+  registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder \
+  bash .beagle/build.sh
+
+# build scheduler arm64 binaries
+docker run -it --rm \
+  -v $PWD:/go/src/github.com/Project-HAMi/HAMi \
+  -w /go/src/github.com/Project-HAMi/HAMi \
+  -e BUILD_VERSION=v2.6.2 \
+  -e BUILD_TARGET=scheduler-arm64 \
   registry.cn-qingdao.aliyuncs.com/wod/golang:1.24 \
   bash .beagle/build.sh
 ```

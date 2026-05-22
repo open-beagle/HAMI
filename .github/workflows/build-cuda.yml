@@ -1,0 +1,98 @@
+name: Build CUDA Images
+
+on:
+  push:
+    branches:
+      - build-cuda
+
+env:
+  BUILD_VERSION: v2.6.2
+  GO_VERSION: 1.24.10
+  CUDA_BUILDER_BASE_IMAGE: nvidia/cuda:12.4.1-devel-ubuntu22.04
+  HAMI_BUILDER_IMAGE: registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder
+
+jobs:
+  build-builder:
+    name: Build CUDA 12.4 Builder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: registry.cn-qingdao.aliyuncs.com
+          username: ${{ secrets.REGISTRY_USER_ALIYUN }}
+          password: ${{ secrets.REGISTRY_PASSWORD_ALIYUN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push HAMi CUDA 12.4 builder
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .beagle/hami-builder-cuda124.Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ${{ env.HAMI_BUILDER_IMAGE }}
+          build-args: |
+            BASE=${{ env.CUDA_BUILDER_BASE_IMAGE }}
+            GO_VERSION=${{ env.GO_VERSION }}
+          provenance: false
+          sbom: false
+
+  build-cuda:
+    name: Build CUDA amd64 Image
+    needs:
+      - build-builder
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: registry.cn-qingdao.aliyuncs.com
+          username: ${{ secrets.REGISTRY_USER_ALIYUN }}
+          password: ${{ secrets.REGISTRY_PASSWORD_ALIYUN }}
+
+      - name: Cross Build - amd64 CUDA
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/go/src/github.com/Project-HAMi/HAMi \
+            -w /go/src/github.com/Project-HAMi/HAMi \
+            -e BUILD_VERSION=${{ env.BUILD_VERSION }} \
+            -e BUILD_TARGET=cuda-amd64 \
+            ${{ env.HAMI_BUILDER_IMAGE }} \
+            bash .beagle/build.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image for amd64 - hami cuda
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .beagle/hami-cuda.dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hami:${{ env.BUILD_VERSION }}-cuda
+            registry.cn-qingdao.aliyuncs.com/wod/hami:${{ env.BUILD_VERSION }}-cuda
+          build-args: |
+            VERSION=${{ env.BUILD_VERSION }}
+            TARGETOS=linux
+            TARGETARCH=amd64
+          provenance: false
+          sbom: false
