@@ -35,7 +35,7 @@ docker run -it --rm \
   -w /go/src/github.com/Project-HAMi/HAMi \
   -e BUILD_VERSION=v2.6.2 \
   -e BUILD_TARGET=cuda-amd64 \
-  registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder \
+  ghcr.io/open-beagle/hami:v2-cuda124-builder \
   bash .beagle/build.sh
 
 # build scheduler arm64 binaries

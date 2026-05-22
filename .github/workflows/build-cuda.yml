@@ -7,7 +7,7 @@ on:
 
 env:
   BUILD_VERSION: v2.6.2
-  HAMI_BUILDER_IMAGE: registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder
+  HAMI_BUILDER_IMAGE: ghcr.io/${{ github.repository_owner }}/hami:v2-cuda124-builder
 
 jobs:
   build-cuda:
@@ -33,6 +33,7 @@ jobs:
 
       - name: Cross Build - amd64 CUDA
         run: |
+          docker pull ${{ env.HAMI_BUILDER_IMAGE }}
           docker run --rm \
             -v ${{ github.workspace }}:/go/src/github.com/Project-HAMi/HAMi \
             -w /go/src/github.com/Project-HAMi/HAMi \

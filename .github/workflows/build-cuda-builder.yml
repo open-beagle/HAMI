@@ -3,10 +3,7 @@ name: Build HAMi CUDA 12.4 Builder
 on:
   push:
     branches:
-      - build-cuda
-    paths:
-      - .beagle/hami-builder-cuda124.Dockerfile
-      - .github/workflows/build-hami-builder-cuda124.yml
+      - build-cuda-builder
   workflow_dispatch:
 
 env:
@@ -19,6 +16,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Login to Github Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Aliyun Container Registry
         uses: docker/login-action@v2
@@ -38,6 +42,7 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: |
+            ghcr.io/${{ github.repository_owner }}/hami:v2-cuda124-builder
             registry.cn-qingdao.aliyuncs.com/wod/hami:v2-cuda124-builder
           build-args: |
             BASE=nvidia/cuda:12.4.1-devel-ubuntu22.04
