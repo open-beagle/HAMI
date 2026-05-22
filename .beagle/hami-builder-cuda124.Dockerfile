@@ -18,7 +18,7 @@
 ARG BASE=nvidia/cuda:12.4.1-devel-ubuntu22.04
 ARG GO_VERSION=1.24.10
 
-FROM --platform=linux/amd64 ${BASE}
+FROM ${BASE}
 
 ARG GO_VERSION
 
