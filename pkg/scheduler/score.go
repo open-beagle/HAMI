@@ -320,24 +320,55 @@ func (s *Scheduler) calcScore(nodes *map[string]*NodeUsage, nums util.PodDeviceR
 			score := policy.NodeScore{NodeID: nodeID, Node: node.Node, Devices: make(util.PodDevices), Score: 0}
 			score.ComputeDefaultScore(node.Devices)
 
-			// Find other pods of the same job on the same node to enforce training physical GPU mutual exclusion
+			// Find other pods of other/same jobs on the same node to enforce training physical GPU mutual exclusion
 			jobInuseUUIDs := make(map[string]bool)
-			if task.Labels != nil && task.Labels["training.kubeflow.org/job-name"] != "" {
-				jobName := task.Labels["training.kubeflow.org/job-name"]
+			taskJob := ""
+			if task.Labels != nil {
+				for _, labelKey := range []string{
+					"training.kubeflow.org/job-name",
+					"job-name",
+					"batch.kubernetes.io/job-name",
+					"volcano.sh/job-name",
+				} {
+					if val, ok := task.Labels[labelKey]; ok && val != "" {
+						taskJob = val
+						break
+					}
+				}
+			}
+
+			if taskJob != "" {
 				for _, pInfo := range s.ListPodsInfo() {
 					if pInfo.NodeID == nodeID && pInfo.Namespace == task.Namespace {
 						// Retrieve the pod to check its labels
 						otherPod, err := s.podLister.Pods(pInfo.Namespace).Get(pInfo.Name)
-						if err == nil && otherPod.Labels != nil && otherPod.Labels["training.kubeflow.org/job-name"] == jobName && otherPod.UID != task.UID {
-							// Collect all physical GPU UUIDs allocated to this other pod
-							for _, podsingleds := range pInfo.Devices {
-								for _, ctrdevs := range podsingleds {
-									for _, udevice := range ctrdevs {
-										deviceID := udevice.UUID
-										if strings.Contains(deviceID, "[") {
-											deviceID = strings.Split(deviceID, "[")[0]
+						if err == nil && otherPod.UID != task.UID {
+							otherJob := ""
+							if otherPod.Labels != nil {
+								for _, labelKey := range []string{
+									"training.kubeflow.org/job-name",
+									"job-name",
+									"batch.kubernetes.io/job-name",
+									"volcano.sh/job-name",
+								} {
+									if val, ok := otherPod.Labels[labelKey]; ok && val != "" {
+										otherJob = val
+										break
+									}
+								}
+							}
+							// If the other pod belongs to ANY training/batch job, we must not share the physical GPU
+							if otherJob != "" {
+								// Collect all physical GPU UUIDs allocated to this other pod
+								for _, podsingleds := range pInfo.Devices {
+									for _, ctrdevs := range podsingleds {
+										for _, udevice := range ctrdevs {
+											deviceID := udevice.UUID
+											if strings.Contains(deviceID, "[") {
+												deviceID = strings.Split(deviceID, "[")[0]
+											}
+											jobInuseUUIDs[deviceID] = true
 										}
-										jobInuseUUIDs[deviceID] = true
 									}
 								}
 							}
