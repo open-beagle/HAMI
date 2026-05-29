@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/Project-HAMi/HAMi/pkg/device"
+	"github.com/Project-HAMi/HAMi/pkg/k8sutil"
 	"github.com/Project-HAMi/HAMi/pkg/scheduler/config"
 	"github.com/Project-HAMi/HAMi/pkg/scheduler/policy"
 	"github.com/Project-HAMi/HAMi/pkg/util"
@@ -81,12 +82,25 @@ const (
 	nodeFitPod                        = "NodeFitPod"
 )
 
-func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, annos map[string]string, pod *corev1.Pod, allocated *util.PodDevices) (bool, map[string]util.ContainerDevices, string) {
+func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, annos map[string]string, pod *corev1.Pod, allocated *util.PodDevices, jobInuseUUIDs map[string]bool) (bool, map[string]util.ContainerDevices, string) {
 	k := request
 	originReq := k.Nums
 	prevnuma := -1
 	nodeName := node.Node.Name
 	klog.InfoS("Allocating device for container request", "pod", klog.KObj(pod), "card request", k)
+
+	inuseUUIDs := make(map[string]bool)
+	if allocated != nil {
+		for _, devList := range (*allocated)[k.Type] {
+			for _, ctrDev := range devList {
+				inuseUUIDs[ctrDev.UUID] = true
+			}
+		}
+	}
+	for u := range jobInuseUUIDs {
+		inuseUUIDs[u] = true
+	}
+
 	var tmpDevs map[string]util.ContainerDevices
 	tmpDevs = make(map[string]util.ContainerDevices)
 	reason := make(map[string]int)
@@ -97,6 +111,11 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 		if !found {
 			reason[cardTypeMismatch]++
 			klog.V(5).InfoS(cardTypeMismatch, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, dev.Type, k.Type)
+			continue
+		}
+		if inuseUUIDs[dev.ID] {
+			reason[cardUUIDMismatch]++
+			klog.V(5).InfoS("device already allocated to this pod in another container, skipping", "pod", klog.KObj(pod), "device", dev.ID)
 			continue
 		}
 		if numa && prevnuma != dev.Numa {
@@ -202,7 +221,7 @@ func genReason(reasons map[string]int, cards int) string {
 	return strings.Join(reason, ", ")
 }
 
-func fitInDevices(node *NodeUsage, requests util.ContainerDeviceRequests, annos map[string]string, pod *corev1.Pod, devinput *util.PodDevices) (bool, string) {
+func fitInDevices(node *NodeUsage, requests util.ContainerDeviceRequests, annos map[string]string, pod *corev1.Pod, devinput *util.PodDevices, jobInuseUUIDs map[string]bool) (bool, string) {
 	//devmap := make(map[string]util.ContainerDevices)
 	devs := util.ContainerDevices{}
 	total, totalCore, totalMem := int32(0), int32(0), int32(0)
@@ -212,15 +231,41 @@ func fitInDevices(node *NodeUsage, requests util.ContainerDeviceRequests, annos 
 	for index := range node.Devices.DeviceLists {
 		node.Devices.DeviceLists[index].ComputeScore(requests)
 	}
+	podNums := k8sutil.Resourcereqs(pod)
+	podTotalReq := make(map[string]int32)
+	for _, n := range podNums {
+		for devType, req := range n {
+			podTotalReq[devType] += req.Nums
+		}
+	}
+
 	//This loop is for requests for different devices
 	for _, k := range requests {
 		sums += int(k.Nums)
-		if int(k.Nums) > len(node.Devices.DeviceLists) {
-			klog.V(5).InfoS(nodeInsufficientDevice, "pod", klog.KObj(pod), "request devices nums", k.Nums, "node device nums", len(node.Devices.DeviceLists))
+
+		typeCount := 0
+		jobTypeCount := 0
+		for _, d := range node.Devices.DeviceLists {
+			if strings.Contains(d.Device.Type, k.Type) {
+				typeCount++
+				if jobInuseUUIDs[d.Device.ID] {
+					jobTypeCount++
+				}
+			}
+		}
+
+		reqCount := k.Nums
+		if podTotalReq[k.Type] > reqCount {
+			reqCount = podTotalReq[k.Type]
+		}
+		reqCount += int32(jobTypeCount)
+
+		if (typeCount > 0 && int(reqCount) > typeCount) || int(k.Nums) > len(node.Devices.DeviceLists) {
+			klog.V(5).InfoS(nodeInsufficientDevice, "pod", klog.KObj(pod), "request total devices nums", reqCount, "node match device nums", typeCount)
 			return false, nodeInsufficientDevice
 		}
 		sort.Sort(node.Devices)
-		fit, tmpDevs, reason := fitInCertainDevice(node, k, annos, pod, devinput)
+		fit, tmpDevs, reason := fitInCertainDevice(node, k, annos, pod, devinput, jobInuseUUIDs)
 		if fit {
 			for idx, val := range tmpDevs[k.Type] {
 				for nidx, v := range node.Devices.DeviceLists {
@@ -275,6 +320,32 @@ func (s *Scheduler) calcScore(nodes *map[string]*NodeUsage, nums util.PodDeviceR
 			score := policy.NodeScore{NodeID: nodeID, Node: node.Node, Devices: make(util.PodDevices), Score: 0}
 			score.ComputeDefaultScore(node.Devices)
 
+			// Find other pods of the same job on the same node to enforce training physical GPU mutual exclusion
+			jobInuseUUIDs := make(map[string]bool)
+			if task.Labels != nil && task.Labels["training.kubeflow.org/job-name"] != "" {
+				jobName := task.Labels["training.kubeflow.org/job-name"]
+				for _, pInfo := range s.ListPodsInfo() {
+					if pInfo.NodeID == nodeID && pInfo.Namespace == task.Namespace {
+						// Retrieve the pod to check its labels
+						otherPod, err := s.podLister.Pods(pInfo.Namespace).Get(pInfo.Name)
+						if err == nil && otherPod.Labels != nil && otherPod.Labels["training.kubeflow.org/job-name"] == jobName && otherPod.UID != task.UID {
+							// Collect all physical GPU UUIDs allocated to this other pod
+							for _, podsingleds := range pInfo.Devices {
+								for _, ctrdevs := range podsingleds {
+									for _, udevice := range ctrdevs {
+										deviceID := udevice.UUID
+										if strings.Contains(deviceID, "[") {
+											deviceID = strings.Split(deviceID, "[")[0]
+										}
+										jobInuseUUIDs[deviceID] = true
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
 			//This loop is for different container request
 			ctrfit := false
 			for ctrid, n := range nums {
@@ -296,7 +367,7 @@ func (s *Scheduler) calcScore(nodes *map[string]*NodeUsage, nums util.PodDeviceR
 					}
 				}
 				klog.V(5).InfoS("fitInDevices", "pod", klog.KObj(task), "node", nodeID)
-				fit, reason := fitInDevices(node, n, annos, task, &score.Devices)
+				fit, reason := fitInDevices(node, n, annos, task, &score.Devices, jobInuseUUIDs)
 				ctrfit = fit
 				if !fit {
 					klog.V(4).InfoS(nodeUnfitPod, "pod", klog.KObj(task), "node", nodeID, "reason", reason)
