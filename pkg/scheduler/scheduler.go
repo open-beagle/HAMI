@@ -61,6 +61,45 @@ type Scheduler struct {
 	eventRecorder record.EventRecorder
 }
 
+type filterCandidate struct {
+	NodeName string  `json:"nodeName"`
+	Score    float32 `json:"score"`
+}
+
+type filterResult struct {
+	Version      int               `json:"version"`
+	Status       string            `json:"status"`
+	SelectedNode string            `json:"selectedNode"`
+	FitCount     int               `json:"fitCount"`
+	UnfitCount   int               `json:"unfitCount"`
+	Candidates   []filterCandidate `json:"candidates"`
+	Message      string            `json:"message"`
+}
+
+func encodeFilterResult(status, selectedNode string, totalNodes int, nodeScores []*policy.NodeScore, message string) (string, error) {
+	candidates := make([]filterCandidate, 0, len(nodeScores))
+	for _, nodeScore := range nodeScores {
+		candidates = append(candidates, filterCandidate{
+			NodeName: nodeScore.NodeID,
+			Score:    nodeScore.Score,
+		})
+	}
+
+	result, err := json.Marshal(filterResult{
+		Version:      1,
+		Status:       status,
+		SelectedNode: selectedNode,
+		FitCount:     len(candidates),
+		UnfitCount:   totalNodes - len(candidates),
+		Candidates:   candidates,
+		Message:      message,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
+}
+
 func NewScheduler() *Scheduler {
 	klog.InfoS("Initializing HAMi scheduler")
 	s := &Scheduler{
@@ -589,7 +628,20 @@ func (s *Scheduler) Filter(args extenderv1.ExtenderArgs) (*extenderv1.ExtenderFi
 	if len((*nodeScores).NodeList) == 0 {
 		klog.V(4).InfoS("No available nodes meet the required scores",
 			"pod", args.Pod.Name)
-		s.recordScheduleFilterResultEvent(args.Pod, EventReasonFilteringFailed, "", fmt.Errorf("no available node, %d nodes do not meet", len(*args.NodeNames)))
+		filterErr := fmt.Errorf("no available node, %d nodes do not meet", len(*args.NodeNames))
+		filterResultJSON, marshalErr := encodeFilterResult("failed", "", len(*args.NodeNames), nil, filterErr.Error())
+		if marshalErr != nil {
+			klog.ErrorS(marshalErr, "Failed to encode filter result", "pod", klog.KObj(args.Pod))
+		} else {
+			filterAnnotations := map[string]string{
+				util.FilterTimeAnnotations:   strconv.FormatInt(time.Now().Unix(), 10),
+				util.FilterResultAnnotations: filterResultJSON,
+			}
+			if patchErr := util.PatchPodAnnotations(args.Pod, filterAnnotations); patchErr != nil {
+				klog.ErrorS(patchErr, "Failed to persist filter result", "pod", klog.KObj(args.Pod))
+			}
+		}
+		s.recordScheduleFilterResultEvent(args.Pod, EventReasonFilteringFailed, "", filterErr)
 		return &extenderv1.ExtenderFilterResult{
 			FailedNodes: failedNodes,
 		}, nil
@@ -603,8 +655,17 @@ func (s *Scheduler) Filter(args extenderv1.ExtenderArgs) (*extenderv1.ExtenderFi
 		"nodeID", m.NodeID,
 		"devices", m.Devices)
 	annotations := make(map[string]string)
+	filterTime := strconv.FormatInt(time.Now().Unix(), 10)
+	filterResultJSON, err := encodeFilterResult("success", m.NodeID, len(*args.NodeNames), nodeScores.NodeList, "")
+	if err != nil {
+		err = fmt.Errorf("failed to encode filter result for pod %s: %w", args.Pod.Name, err)
+		s.recordScheduleFilterResultEvent(args.Pod, EventReasonFilteringFailed, "", err)
+		return nil, err
+	}
 	annotations[util.AssignedNodeAnnotations] = m.NodeID
-	annotations[util.AssignedTimeAnnotations] = strconv.FormatInt(time.Now().Unix(), 10)
+	annotations[util.AssignedTimeAnnotations] = filterTime
+	annotations[util.FilterTimeAnnotations] = filterTime
+	annotations[util.FilterResultAnnotations] = filterResultJSON
 
 	for _, val := range device.GetDevices() {
 		val.PatchAnnotations(&annotations, m.Devices)

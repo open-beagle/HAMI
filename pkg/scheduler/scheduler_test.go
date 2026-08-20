@@ -18,6 +18,8 @@ package scheduler
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -27,8 +29,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	extenderv1 "k8s.io/kube-scheduler/extender/v1"
@@ -236,7 +240,8 @@ test case matrix.
 */
 func Test_Filter(t *testing.T) {
 	s := NewScheduler()
-	client.KubeClient = fake.NewSimpleClientset()
+	fakeClient := fake.NewSimpleClientset()
+	client.KubeClient = fakeClient
 	s.kubeClient = client.KubeClient
 	informerFactory := informers.NewSharedInformerFactoryWithOptions(client.KubeClient, time.Hour*1)
 	s.podLister = informerFactory.Core().V1().Pods().Lister()
@@ -447,6 +452,8 @@ func Test_Filter(t *testing.T) {
 		args                      extenderv1.ExtenderArgs
 		want                      *extenderv1.ExtenderFilterResult
 		wantPodAnnotationDeviceID string
+		wantFilterStatus          string
+		patchError                bool
 		wantErr                   error
 	}{
 		{
@@ -485,6 +492,7 @@ func Test_Filter(t *testing.T) {
 				NodeNames: &[]string{"node2"},
 			},
 			wantPodAnnotationDeviceID: "device4",
+			wantFilterStatus:          "success",
 		},
 		{
 			name: "node use binpack gpu use spread policy",
@@ -522,6 +530,7 @@ func Test_Filter(t *testing.T) {
 				NodeNames: &[]string{"node2"},
 			},
 			wantPodAnnotationDeviceID: "device3",
+			wantFilterStatus:          "success",
 		},
 		{
 			name: "node use spread gpu use binpack policy",
@@ -559,6 +568,7 @@ func Test_Filter(t *testing.T) {
 				NodeNames: &[]string{"node1"},
 			},
 			wantPodAnnotationDeviceID: "device1",
+			wantFilterStatus:          "success",
 		},
 		{
 			name: "node use spread gpu use spread policy",
@@ -596,6 +606,55 @@ func Test_Filter(t *testing.T) {
 				NodeNames: &[]string{"node1"},
 			},
 			wantPodAnnotationDeviceID: "device2",
+			wantFilterStatus:          "success",
+		},
+		{
+			name: "no available node persists failed filter result",
+			args: extenderv1.ExtenderArgs{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-no-node", UID: "test-no-node-uid"},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Name: "gpu-burn",
+						Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{
+							"hami.io/gpu": *resource.NewQuantity(100, resource.BinarySI),
+						}},
+					}}},
+				},
+				NodeNames: &[]string{"node1"},
+			},
+			want: &extenderv1.ExtenderFilterResult{
+				FailedNodes: map[string]string{"node1": nodeUnfitPod},
+			},
+			wantFilterStatus: "failed",
+		},
+		{
+			name: "pod without managed resources does not persist filter result",
+			args: extenderv1.ExtenderArgs{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-no-resource", UID: "test-no-resource-uid"},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "worker"}}},
+				},
+				NodeNames: &[]string{"node1", "node2"},
+			},
+			want: &extenderv1.ExtenderFilterResult{
+				NodeNames: &[]string{"node1", "node2"},
+			},
+		},
+		{
+			name: "successful result patch failure is returned without retry",
+			args: extenderv1.ExtenderArgs{
+				Pod: &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-patch-error", UID: "test-patch-error-uid"},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Name: "gpu-burn",
+						Resources: corev1.ResourceRequirements{Limits: corev1.ResourceList{
+							"hami.io/gpu": *resource.NewQuantity(1, resource.BinarySI),
+						}},
+					}}},
+				},
+				NodeNames: &[]string{"node1"},
+			},
+			patchError: true,
 		},
 	}
 
@@ -603,14 +662,92 @@ func Test_Filter(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			initNode()
 			client.KubeClient.CoreV1().Pods(test.args.Pod.Namespace).Create(context.Background(), test.args.Pod, metav1.CreateOptions{})
+			patchCount := 0
+			if test.patchError {
+				fakeClient.PrependReactor("patch", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+					patchCount++
+					return true, nil, errors.New("patch failed")
+				})
+			}
 			got, gotErr := s.Filter(test.args)
-			assert.DeepEqual(t, test.wantErr, gotErr)
-			assert.DeepEqual(t, test.want, got)
+			if test.patchError {
+				require.ErrorContains(t, gotErr, "patch failed")
+				require.Nil(t, got)
+				require.Equal(t, 1, patchCount)
+			} else {
+				assert.DeepEqual(t, test.wantErr, gotErr)
+				assert.DeepEqual(t, test.want, got)
+			}
 			getPod, _ := client.KubeClient.CoreV1().Pods(test.args.Pod.Namespace).Get(context.Background(), test.args.Pod.Name, metav1.GetOptions{})
-			podDevices, _ := util.DecodePodDevices(util.SupportDevices, getPod.Annotations)
-			assert.DeepEqual(t, test.wantPodAnnotationDeviceID, podDevices["NVIDIA"][0][0].UUID)
+			if test.wantPodAnnotationDeviceID != "" {
+				podDevices, _ := util.DecodePodDevices(util.SupportDevices, getPod.Annotations)
+				assert.DeepEqual(t, test.wantPodAnnotationDeviceID, podDevices["NVIDIA"][0][0].UUID)
+			}
+
+			filterResultJSON, hasFilterResult := getPod.Annotations[util.FilterResultAnnotations]
+			filterTime, hasFilterTime := getPod.Annotations[util.FilterTimeAnnotations]
+			if test.wantFilterStatus == "" {
+				require.False(t, hasFilterResult)
+				require.False(t, hasFilterTime)
+				return
+			}
+
+			require.True(t, hasFilterResult)
+			require.NotEmpty(t, filterTime)
+			var evidence filterResult
+			require.NoError(t, json.Unmarshal([]byte(filterResultJSON), &evidence))
+			require.Equal(t, 1, evidence.Version)
+			require.Equal(t, test.wantFilterStatus, evidence.Status)
+			require.Equal(t, len(*test.args.NodeNames), evidence.FitCount+evidence.UnfitCount)
+			if evidence.Status == "success" {
+				require.Equal(t, (*got.NodeNames)[0], evidence.SelectedNode)
+				require.Equal(t, getPod.Annotations[util.AssignedTimeAnnotations], filterTime)
+				require.NotEmpty(t, evidence.Candidates)
+				require.Equal(t, evidence.SelectedNode, evidence.Candidates[len(evidence.Candidates)-1].NodeName)
+			} else {
+				require.Empty(t, evidence.SelectedNode)
+				require.Zero(t, evidence.FitCount)
+				require.Empty(t, evidence.Candidates)
+				require.NotEmpty(t, evidence.Message)
+			}
 		})
 	}
+}
+
+func TestEncodeFilterResult(t *testing.T) {
+	t.Run("success preserves candidate order and score", func(t *testing.T) {
+		encoded, err := encodeFilterResult("success", "node-a", 3, []*policy.NodeScore{
+			{NodeID: "node-b", Score: 1.25},
+			{NodeID: "node-a", Score: 2.5},
+		}, "")
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"version": 1,
+			"status": "success",
+			"selectedNode": "node-a",
+			"fitCount": 2,
+			"unfitCount": 1,
+			"candidates": [
+				{"nodeName": "node-b", "score": 1.25},
+				{"nodeName": "node-a", "score": 2.5}
+			],
+			"message": ""
+		}`, encoded)
+	})
+
+	t.Run("failed result encodes candidates as empty array", func(t *testing.T) {
+		encoded, err := encodeFilterResult("failed", "", 2, nil, "no available node")
+		require.NoError(t, err)
+		require.JSONEq(t, `{
+			"version": 1,
+			"status": "failed",
+			"selectedNode": "",
+			"fitCount": 0,
+			"unfitCount": 2,
+			"candidates": [],
+			"message": "no available node"
+		}`, encoded)
+	})
 }
 
 func Test_RegisterFromNodeAnnotations(t *testing.T) {

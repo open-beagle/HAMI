@@ -25,6 +25,8 @@ const (
 	//ResourceName = "hami.io/vgpu".
 	AssignedTimeAnnotations = "hami.io/vgpu-time"
 	AssignedNodeAnnotations = "hami.io/vgpu-node"
+	FilterTimeAnnotations   = "hami.io/filter-time"
+	FilterResultAnnotations = "hami.io/filter-result"
 	BindTimeAnnotations     = "hami.io/bind-time"
 	DeviceBindPhase         = "hami.io/bind-phase"
 

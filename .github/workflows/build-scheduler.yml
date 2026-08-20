@@ -6,7 +6,7 @@ on:
       - scheduler
 
 env:
-  BUILD_VERSION: v2.6.3
+  BUILD_VERSION: v2.6.4
   AMD64_BUILDER_IMAGE: registry.cn-qingdao.aliyuncs.com/wod/golang:1.24
   ARM64_BUILDER_IMAGE: registry.cn-qingdao.aliyuncs.com/wod/golang:1.24
 
