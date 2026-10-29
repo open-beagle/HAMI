@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ascend910c-hami-core-job
+  annotations:
+    # Soft-split mode: arbitrary memory/core percentage, no vNPU template snap.
+    huawei.com/vnpu-mode: hami-core
+spec:
+  containers:
+    - name: ubuntu-container
+      image: ascendhub.huawei.com/public-ascendhub/ascend-mindspore:23.0.RC3-centos7
+      command: ["bash", "-c", "sleep 86400"]
+      resources:
+        limits:
+          huawei.com/Ascend910C: 1
+          huawei.com/Ascend910C-memory: 20480 # MiB, kept as-is (not snapped to templates)
+          huawei.com/Ascend910C-core: 40      # percent of device compute (0-100)
+---
+# Node must either have annotation hami-vnpu-core=true, or chart value
+# devices.ascend.hamiVnpuCore=true, for this soft-split pod to schedule.

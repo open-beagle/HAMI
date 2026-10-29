@@ -5,7 +5,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update -y && apt-get install -y tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
 
 ARG AUTHOR=mengkzhaoyun@gmail.com
-ARG VERSION=v2.6.2
+ARG VERSION=v2.6.5
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 LABEL maintainer=${AUTHOR} version=${VERSION}

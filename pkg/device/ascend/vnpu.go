@@ -28,9 +28,14 @@ type VNPUConfig struct {
 	ChipName           string     `yaml:"chipName"`
 	ResourceName       string     `yaml:"resourceName"`
 	ResourceMemoryName string     `yaml:"resourceMemoryName"`
+	ResourceCoreName   string     `yaml:"resourceCoreName"`
 	MemoryAllocatable  int64      `yaml:"memoryAllocatable"`
 	MemoryCapacity     int64      `yaml:"memoryCapacity"`
+	MemoryFactor       int32      `yaml:"memoryFactor"`
 	AICore             int32      `yaml:"aiCore"`
 	AICPU              int32      `yaml:"aiCPU"`
 	Templates          []Template `yaml:"templates"`
+	// SuperPod enables Ascend 910C module-pair allocation (min unit = 2 NPUs).
+	// Keep false for non-SuperPod vNPU template split (vir05_1c_16g / vir10_3c_32g).
+	SuperPod bool `yaml:"superPod"`
 }

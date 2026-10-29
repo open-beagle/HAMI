@@ -69,7 +69,10 @@ type Config struct {
 	MthreadsConfig  mthreads.MthreadsConfig   `yaml:"mthreads"`
 	IluvatarConfig  iluvatar.IluvatarConfig   `yaml:"iluvatar"`
 	EnflameConfig   enflame.EnflameConfig     `yaml:"enflame"`
-	VNPUs           []ascend.VNPUConfig       `yaml:"vnpus"`
+	// HamiVnpuCore enables Ascend hami-vnpu-core soft-partitioning for all nodes
+	// by default; node annotation hami-vnpu-core takes higher priority.
+	HamiVnpuCore bool                `yaml:"hamiVnpuCore"`
+	VNPUs        []ascend.VNPUConfig `yaml:"vnpus"`
 }
 
 var (
@@ -182,7 +185,7 @@ func InitDevicesWithConfig(config *Config) error {
 	}
 
 	// Initialize Ascend devices
-	for _, dev := range ascend.InitDevices(config.VNPUs) {
+	for _, dev := range ascend.InitDevices(config.VNPUs, config.HamiVnpuCore) {
 		commonWord := dev.CommonWord()
 		devicesMap[commonWord] = dev
 		DevicesToHandle = append(DevicesToHandle, commonWord)
@@ -244,11 +247,13 @@ iluvatar:
   resourceCountName: "iluvatar.ai/vgpu"
   resourceMemoryName: "iluvatar.ai/vcuda-memory"
   resourceCoreName: "iluvatar.ai/vcuda-core"
+hamiVnpuCore: false
 vnpus:
   - chipName: "910B"
     commonWord: "Ascend910A"
     resourceName: "huawei.com/Ascend910A"
     resourceMemoryName: "huawei.com/Ascend910A-memory"
+    resourceCoreName: "huawei.com/Ascend910A-core"
     memoryAllocatable: 32768
     memoryCapacity: 32768
     aiCore: 30
@@ -269,6 +274,7 @@ vnpus:
     commonWord: Ascend910B2
     resourceName: huawei.com/Ascend910B2
     resourceMemoryName: huawei.com/Ascend910B2-memory
+    resourceCoreName: huawei.com/Ascend910B2-core
     memoryAllocatable: 65536
     memoryCapacity: 65536
     aiCore: 24
@@ -290,6 +296,7 @@ vnpus:
     commonWord: "Ascend910B"
     resourceName: "huawei.com/Ascend910B"
     resourceMemoryName: "huawei.com/Ascend910B-memory"
+    resourceCoreName: "huawei.com/Ascend910B-core"
     memoryAllocatable: 65536
     memoryCapacity: 65536
     aiCore: 20
@@ -307,6 +314,7 @@ vnpus:
     commonWord: Ascend910B4
     resourceName: huawei.com/Ascend910B4
     resourceMemoryName: huawei.com/Ascend910B4-memory
+    resourceCoreName: huawei.com/Ascend910B4-core
     memoryAllocatable: 32768
     memoryCapacity: 32768
     aiCore: 20
@@ -324,6 +332,7 @@ vnpus:
     commonWord: "Ascend310P"
     resourceName: "huawei.com/Ascend310P"
     resourceMemoryName: "huawei.com/Ascend310P-memory"
+    resourceCoreName: "huawei.com/Ascend310P-core"
     memoryAllocatable: 21527
     memoryCapacity: 24576
     aiCore: 8
@@ -340,7 +349,26 @@ vnpus:
       - name: "vir04"
         memory: 12288
         aiCore: 4
-        aiCPU: 4`
+        aiCPU: 4
+  - chipName: "Ascend910"
+    commonWord: "Ascend910C"
+    resourceName: "huawei.com/Ascend910C"
+    resourceMemoryName: "huawei.com/Ascend910C-memory"
+    resourceCoreName: "huawei.com/Ascend910C-core"
+    memoryAllocatable: 65536
+    memoryCapacity: 65536
+    aiCore: 20
+    aiCPU: 7
+    superPod: true
+    templates:
+      - name: "vir05_1c_16g"
+        memory: 16384
+        aiCore: 5
+        aiCPU: 1
+      - name: "vir10_3c_32g"
+        memory: 32768
+        aiCore: 10
+        aiCPU: 3`
 
 	var yamlData Config
 	err := yaml.Unmarshal([]byte(configMapdata), &yamlData)

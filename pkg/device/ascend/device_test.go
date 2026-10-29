@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -148,7 +149,7 @@ func Test_InitDevices(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			enableAscend = test.enableAscend
-			devices := InitDevices(test.args)
+			devices := InitDevices(test.args, false)
 			assert.Equal(t, len(devices), len(test.want), "Expected length of result to match want")
 			if enableAscend {
 				for k, v := range devices {
@@ -315,7 +316,7 @@ func Test_PatchAnnotations(t *testing.T) {
 				util.InRequestDevices[dev.config.CommonWord]: "device-0,Ascend,8738,1:;",
 				util.SupportDevices[dev.config.CommonWord]:   "device-0,Ascend,8738,1:;",
 				"predicate-time":        strconv.FormatInt(time.Now().Unix(), 10),
-				"huawei.com/Ascend910A": "[{\"UUID\":\"device-0\",\"temp\":\"vir08\"}]",
+				"huawei.com/Ascend910A": "[{\"UUID\":\"device-0\",\"temp\":\"vir08\",\"memory\":8738,\"core\":1}]",
 			},
 		},
 		{
@@ -877,4 +878,354 @@ func TestDevices_ReleaseNodeLock(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_MutateAdmission910C(t *testing.T) {
+	tests := []struct {
+		name   string
+		devCfg VNPUConfig
+		args   struct {
+			ctr corev1.Container
+			pod corev1.Pod
+		}
+		want      bool
+		wantErr   bool
+		wantCount int64
+	}{
+		{
+			name: "910C: request 1 -> auto adjust to 2",
+			devCfg: VNPUConfig{
+				CommonWord:        "Ascend910C",
+				ResourceName:      "huawei.com/Ascend910C",
+				MemoryAllocatable: 65536,
+				MemoryCapacity:    65536,
+				SuperPod:          true,
+			},
+			args: struct {
+				ctr corev1.Container
+				pod corev1.Pod
+			}{
+				ctr: corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("1"),
+						},
+						Requests: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("1"),
+						},
+					},
+				},
+				pod: corev1.Pod{},
+			},
+			want:      true,
+			wantCount: 2,
+		},
+		{
+			name: "910C: request 3 -> reject (odd number)",
+			devCfg: VNPUConfig{
+				CommonWord:        "Ascend910C",
+				ResourceName:      "huawei.com/Ascend910C",
+				MemoryAllocatable: 65536,
+				MemoryCapacity:    65536,
+				SuperPod:          true,
+			},
+			args: struct {
+				ctr corev1.Container
+				pod corev1.Pod
+			}{
+				ctr: corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("3"),
+						},
+						Requests: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("3"),
+						},
+					},
+				},
+				pod: corev1.Pod{},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "910C: request 4 -> valid even number",
+			devCfg: VNPUConfig{
+				CommonWord:        "Ascend910C",
+				ResourceName:      "huawei.com/Ascend910C",
+				MemoryAllocatable: 65536,
+				MemoryCapacity:    65536,
+				SuperPod:          true,
+			},
+			args: struct {
+				ctr corev1.Container
+				pod corev1.Pod
+			}{
+				ctr: corev1.Container{
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("4"),
+						},
+						Requests: corev1.ResourceList{
+							"huawei.com/Ascend910C": resource.MustParse("4"),
+						},
+					},
+				},
+				pod: corev1.Pod{},
+			},
+			want:      true,
+			wantCount: 4,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dev := Devices{config: test.devCfg}
+			result, err := dev.MutateAdmission(&test.args.ctr, &test.args.pod)
+
+			if result != test.want {
+				t.Errorf("expected return bool: %v, got: %v", test.want, result)
+			}
+			if test.wantErr {
+				assert.Assert(t, err != nil, "expected error but got nil")
+			} else {
+				assert.NilError(t, err)
+			}
+			if test.wantCount > 0 {
+				limitQty := test.args.ctr.Resources.Limits[corev1.ResourceName(test.devCfg.ResourceName)]
+				gotCount, ok := limitQty.AsInt64()
+				assert.Assert(t, ok, "limit quantity should be convertible to int64")
+				assert.Equal(t, gotCount, test.wantCount, "device count should be adjusted")
+			}
+		})
+	}
+}
+
+func Test_MutateAdmission_HAMiCoreSoftSplit(t *testing.T) {
+	devCfg := VNPUConfig{
+		CommonWord:         "Ascend910C",
+		ResourceName:       "huawei.com/Ascend910C",
+		ResourceMemoryName: "huawei.com/Ascend910C-memory",
+		ResourceCoreName:   "huawei.com/Ascend910C-core",
+		MemoryAllocatable:  65536,
+		MemoryCapacity:     65536,
+		Templates: []Template{
+			{Name: "vir05_1c_16g", Memory: 16384, AICore: 5, AICPU: 1},
+			{Name: "vir10_3c_32g", Memory: 32768, AICore: 10, AICPU: 3},
+		},
+	}
+
+	t.Run("hami-core keeps raw memory and allows -core", func(t *testing.T) {
+		ctr := corev1.Container{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					"huawei.com/Ascend910C":        resource.MustParse("1"),
+					"huawei.com/Ascend910C-memory": resource.MustParse("20480"),
+					"huawei.com/Ascend910C-core":   resource.MustParse("40"),
+				},
+				Requests: corev1.ResourceList{
+					"huawei.com/Ascend910C": resource.MustParse("1"),
+				},
+			},
+		}
+		pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUModeAnnotation: VNPUModeHamiCore,
+		}}}
+		dev := Devices{config: devCfg}
+		result, err := dev.MutateAdmission(&ctr, &pod)
+		assert.NilError(t, err)
+		assert.Assert(t, result)
+		memQty := ctr.Resources.Limits["huawei.com/Ascend910C-memory"]
+		gotMem, _ := memQty.AsInt64()
+		assert.Equal(t, gotMem, int64(20480), "hami-core must not snap memory to templates")
+	})
+
+	t.Run("hard-split rejects -core", func(t *testing.T) {
+		ctr := corev1.Container{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					"huawei.com/Ascend910C":      resource.MustParse("1"),
+					"huawei.com/Ascend910C-core": resource.MustParse("40"),
+				},
+			},
+		}
+		dev := Devices{config: devCfg}
+		result, err := dev.MutateAdmission(&ctr, &corev1.Pod{})
+		assert.Assert(t, !result)
+		assert.Assert(t, err != nil)
+	})
+
+	t.Run("hami-core allows multi-device + memory", func(t *testing.T) {
+		ctr := corev1.Container{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					"huawei.com/Ascend910C":        resource.MustParse("2"),
+					"huawei.com/Ascend910C-memory": resource.MustParse("20480"),
+					"huawei.com/Ascend910C-core":   resource.MustParse("30"),
+				},
+			},
+		}
+		pod := corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUModeAnnotation: VNPUModeHamiCore,
+		}}}
+		dev := Devices{config: devCfg}
+		result, err := dev.MutateAdmission(&ctr, &pod)
+		assert.NilError(t, err)
+		assert.Assert(t, result)
+	})
+}
+
+func Test_GenerateResourceRequests_HAMiCore(t *testing.T) {
+	dev := Devices{
+		config: VNPUConfig{
+			CommonWord:         "Ascend910C",
+			ResourceName:       "huawei.com/Ascend910C",
+			ResourceMemoryName: "huawei.com/Ascend910C-memory",
+			ResourceCoreName:   "huawei.com/Ascend910C-core",
+			MemoryAllocatable:  65536,
+			MemoryCapacity:     65536,
+			Templates: []Template{
+				{Name: "vir05_1c_16g", Memory: 16384},
+				{Name: "vir10_3c_32g", Memory: 32768},
+			},
+		},
+	}
+	ctr := corev1.Container{
+		Resources: corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				"huawei.com/Ascend910C":        resource.MustParse("1"),
+				"huawei.com/Ascend910C-memory": resource.MustParse("20480"),
+				"huawei.com/Ascend910C-core":   resource.MustParse("40"),
+			},
+		},
+	}
+	got := dev.GenerateResourceRequests(&ctr)
+	assert.Equal(t, got.Memreq, int32(20480))
+	assert.Equal(t, got.Coresreq, int32(40))
+}
+
+func Test_CheckVNPUModeFit(t *testing.T) {
+	dev := &Devices{
+		config: VNPUConfig{
+			CommonWord:        "Ascend910C",
+			MemoryAllocatable: 65536,
+		},
+		hamiVnpuCore: false,
+	}
+	req := util.ContainerDeviceRequest{Nums: 1, Memreq: 20480, Type: "Ascend910C"}
+
+	t.Run("hami-core pod rejected on hard node", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUModeAnnotation: VNPUModeHamiCore,
+		}}}
+		node := &corev1.Node{}
+		fit, reason := dev.CheckVNPUModeFit(pod, node, req)
+		assert.Assert(t, !fit)
+		assert.Assert(t, strings.Contains(reason, ModeNotFit))
+	})
+
+	t.Run("hami-core pod accepted on annotated node", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUModeAnnotation: VNPUModeHamiCore,
+		}}}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUNodeSelectorAnnotation: "true",
+		}}}
+		fit, _ := dev.CheckVNPUModeFit(pod, node, req)
+		assert.Assert(t, fit)
+	})
+
+	t.Run("legacy fractional pod rejected on soft node", func(t *testing.T) {
+		pod := &corev1.Pod{}
+		node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+			VNPUNodeSelectorAnnotation: "true",
+		}}}
+		fit, reason := dev.CheckVNPUModeFit(pod, node, req)
+		assert.Assert(t, !fit)
+		assert.Assert(t, strings.Contains(reason, ModeNotFit))
+	})
+}
+
+func Test_PatchAnnotations_HAMiCore(t *testing.T) {
+	dev := Devices{
+		config: VNPUConfig{
+			CommonWord:     "Ascend910C",
+			MemoryCapacity: 65536,
+			Templates: []Template{
+				{Name: "vir05_1c_16g", Memory: 16384},
+			},
+		},
+	}
+	anno := map[string]string{VNPUModeAnnotation: VNPUModeHamiCore}
+	pd := util.PodDevices{
+		"Ascend910C": util.PodSingleDevice{
+			{{UUID: "dev-0", Type: "Ascend910C", Usedmem: 20480, Usedcores: 40}},
+		},
+	}
+	result := dev.PatchAnnotations(&anno, pd)
+	got := result["huawei.com/Ascend910C"]
+	assert.Assert(t, strings.Contains(got, `"memory":20480`))
+	assert.Assert(t, strings.Contains(got, `"core":40`))
+	assert.Assert(t, !strings.Contains(got, `"temp"`))
+}
+
+func Test_MutateAdmission910C_VNPUSplit(t *testing.T) {
+	devCfg := VNPUConfig{
+		CommonWord:         "Ascend910C",
+		ResourceName:       "huawei.com/Ascend910C",
+		ResourceMemoryName: "huawei.com/Ascend910C-memory",
+		MemoryAllocatable:  65536,
+		MemoryCapacity:     65536,
+		Templates: []Template{
+			{Name: "vir05_1c_16g", Memory: 16384, AICore: 5, AICPU: 1},
+			{Name: "vir10_3c_32g", Memory: 32768, AICore: 10, AICPU: 3},
+		},
+	}
+
+	t.Run("request 1 + vNPU memory slice is not rounded up", func(t *testing.T) {
+		ctr := corev1.Container{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					"huawei.com/Ascend910C":        resource.MustParse("1"),
+					"huawei.com/Ascend910C-memory": resource.MustParse("16384"),
+				},
+				Requests: corev1.ResourceList{
+					"huawei.com/Ascend910C": resource.MustParse("1"),
+				},
+			},
+		}
+		dev := Devices{config: devCfg}
+		result, err := dev.MutateAdmission(&ctr, &corev1.Pod{})
+		assert.NilError(t, err)
+		assert.Assert(t, result)
+
+		npuQty := ctr.Resources.Limits["huawei.com/Ascend910C"]
+		gotNPU, _ := npuQty.AsInt64()
+		assert.Equal(t, gotNPU, int64(1), "vNPU request must stay at 1, not be rounded up to 2")
+
+		memQty := ctr.Resources.Limits["huawei.com/Ascend910C-memory"]
+		gotMem, _ := memQty.AsInt64()
+		assert.Equal(t, gotMem, int64(16384), "memory should map to the vir05_1c_16g template")
+	})
+
+	t.Run("odd NPU count is allowed when the card is split", func(t *testing.T) {
+		ctr := corev1.Container{
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					"huawei.com/Ascend910C": resource.MustParse("3"),
+				},
+				Requests: corev1.ResourceList{
+					"huawei.com/Ascend910C": resource.MustParse("3"),
+				},
+			},
+		}
+		dev := Devices{config: devCfg}
+		result, err := dev.MutateAdmission(&ctr, &corev1.Pod{})
+		assert.NilError(t, err)
+		assert.Assert(t, result)
+
+		npuQty := ctr.Resources.Limits["huawei.com/Ascend910C"]
+		gotNPU, _ := npuQty.AsInt64()
+		assert.Equal(t, gotNPU, int64(3), "odd count must be preserved in split mode")
+	})
 }

@@ -26,6 +26,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"github.com/Project-HAMi/HAMi/pkg/device"
+	"github.com/Project-HAMi/HAMi/pkg/device/ascend"
 	"github.com/Project-HAMi/HAMi/pkg/k8sutil"
 	"github.com/Project-HAMi/HAMi/pkg/scheduler/config"
 	"github.com/Project-HAMi/HAMi/pkg/scheduler/policy"
@@ -80,6 +81,7 @@ const (
 	allocatedCardsInsufficientRequest = "AllocatedCardsInsufficientRequest"
 	nodeUnfitPod                      = "NodeUnfitPod"
 	nodeFitPod                        = "NodeFitPod"
+	modeNotFit                        = ascend.ModeNotFit
 )
 
 func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, annos map[string]string, pod *corev1.Pod, allocated *util.PodDevices, jobInuseUUIDs map[string]bool) (bool, map[string]util.ContainerDevices, string) {
@@ -104,6 +106,18 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 	var tmpDevs map[string]util.ContainerDevices
 	tmpDevs = make(map[string]util.ContainerDevices)
 	reason := make(map[string]int)
+	// Ascend 910C SuperPod: collect candidates then pick full module pairs (2 NPUs/card).
+	pair910C := false
+	isHAMiCore := ascend.IsHAMiCoreRequest(pod)
+	if ascendDev, ok := device.GetDevices()[k.Type].(*ascend.Devices); ok {
+		if fit, modeReason := ascendDev.CheckVNPUModeFit(pod, node.Node, k); !fit {
+			reason[modeNotFit]++
+			return false, nil, modeReason
+		}
+		if k.Type == ascend.Ascend910CType && originReq > 1 && ascendDev.IsSuperPod() {
+			pair910C = true
+		}
+	}
 	for i := len(node.Devices.DeviceLists) - 1; i >= 0; i-- {
 		dev := node.Devices.DeviceLists[i].Device
 		klog.V(4).InfoS("scoring pod", "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "Memreq", k.Memreq, "MemPercentagereq", k.MemPercentagereq, "Coresreq", k.Coresreq, "Nums", k.Nums, "device index", i)
@@ -164,19 +178,20 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 				klog.V(5).InfoS(cardInsufficientMemory, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total memory", dev.Totalmem, "device used memory", dev.Usedmem, "request memory", memreq)
 				continue
 			}
-			if dev.Totalcore-dev.Usedcores < k.Coresreq {
+			effectiveTotalCore := ascend.EffectiveTotalCore(dev.Totalcore, isHAMiCore)
+			if effectiveTotalCore-dev.Usedcores < k.Coresreq {
 				reason[cardInsufficientCore]++
-				klog.V(5).InfoS(cardInsufficientCore, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total core", dev.Totalcore, "device used core", dev.Usedcores, "request cores", k.Coresreq)
+				klog.V(5).InfoS(cardInsufficientCore, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "device total core", effectiveTotalCore, "device used core", dev.Usedcores, "request cores", k.Coresreq)
 				continue
 			}
 			// Coresreq=100 indicates it want this card exclusively
-			if dev.Totalcore == 100 && k.Coresreq == 100 && dev.Used > 0 {
+			if effectiveTotalCore == 100 && k.Coresreq == 100 && dev.Used > 0 {
 				reason[exclusiveDeviceAllocateConflict]++
 				klog.V(5).InfoS(exclusiveDeviceAllocateConflict, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i, "used", dev.Used)
 				continue
 			}
 			// You can't allocate core=0 job to an already full GPU
-			if dev.Totalcore != 0 && dev.Usedcores == dev.Totalcore && k.Coresreq == 0 {
+			if effectiveTotalCore != 0 && dev.Usedcores == effectiveTotalCore && k.Coresreq == 0 {
 				reason[cardComputeUnitsExhausted]++
 				klog.V(5).InfoS(cardComputeUnitsExhausted, "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID, "device index", i)
 				continue
@@ -189,7 +204,9 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 		}
 		if k.Nums > 0 {
 			klog.V(5).InfoS("find fit device", "pod", klog.KObj(pod), "node", nodeName, "device", dev.ID)
-			k.Nums--
+			if !pair910C {
+				k.Nums--
+			}
 			tmpDevs[k.Type] = append(tmpDevs[k.Type], util.ContainerDevice{
 				Idx:       int(dev.Index),
 				UUID:      dev.ID,
@@ -198,13 +215,24 @@ func fitInCertainDevice(node *NodeUsage, request util.ContainerDeviceRequest, an
 				Usedcores: k.Coresreq,
 			})
 		}
-		if k.Nums == 0 {
+		if k.Nums == 0 && !pair910C {
 			klog.V(4).InfoS("device allocate success", "pod", klog.KObj(pod), "node", nodeName, "allocate device", tmpDevs)
 			return true, tmpDevs, ""
 		}
 		if dev.Mode == "mig" {
 			i++
 		}
+	}
+	if pair910C {
+		combination := ascend.ComputeBestCombination910C(int(originReq), tmpDevs[k.Type])
+		if len(combination) != int(originReq) {
+			reason[allocatedCardsInsufficientRequest] = len(combination)
+			klog.V(5).InfoS(allocatedCardsInsufficientRequest, "pod", klog.KObj(pod), "node", nodeName, "request", originReq, "allocated", len(combination))
+			return false, tmpDevs, genReason(reason, int(originReq))
+		}
+		tmpDevs[k.Type] = combination
+		klog.V(5).InfoS("device allocate success", "pod", klog.KObj(pod), "node", nodeName, "best 910C module pair combination", tmpDevs)
+		return true, tmpDevs, ""
 	}
 	if len(tmpDevs) > 0 {
 		reason[allocatedCardsInsufficientRequest] = len(tmpDevs)

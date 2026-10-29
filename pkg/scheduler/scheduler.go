@@ -667,6 +667,12 @@ func (s *Scheduler) Filter(args extenderv1.ExtenderArgs) (*extenderv1.ExtenderFi
 	annotations[util.FilterTimeAnnotations] = filterTime
 	annotations[util.FilterResultAnnotations] = filterResultJSON
 
+	// Propagate Ascend soft-split mode so PatchAnnotations can emit the right RuntimeInfo.
+	if args.Pod.Annotations != nil {
+		if mode, ok := args.Pod.Annotations["huawei.com/vnpu-mode"]; ok {
+			annotations["huawei.com/vnpu-mode"] = mode
+		}
+	}
 	for _, val := range device.GetDevices() {
 		val.PatchAnnotations(&annotations, m.Devices)
 	}
