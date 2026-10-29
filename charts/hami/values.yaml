@@ -218,7 +218,9 @@ devices:
     libCudaLogLevel: 1
   ascend:
     enabled: false
-    image: ""
+    # Ascend device-plugin image (built by ascend-device-plugin pipeline as hami:*-cann).
+    # Chart does not deploy this DaemonSet; used as the recommended image for standalone install.
+    image: "registry.cn-qingdao.aliyuncs.com/wod/hami:v2.6.5-cann"
     imagePullPolicy: IfNotPresent
     extraArgs: []
     nodeSelector:
